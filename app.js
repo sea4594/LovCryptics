@@ -277,7 +277,7 @@ async function refreshArchive() {
 
     const left = document.createElement("div");
     left.innerHTML = `<div><b>${escapeHtml(p.date)}</b> <small>${escapeHtml(p.psid)}</small></div>
-                      <small>${filled}/${total} filled-correct</small>`;
+                      <small>${filled}/${total} filled</small>`;
 
     const right = document.createElement("div");
     right.innerHTML = `<div class="pct"><b>${pct}%</b></div>`;
