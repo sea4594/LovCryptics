@@ -14,7 +14,7 @@ const homeStatusEl = $("#homeStatus");
 
 const sortBtn = $("#sortBtn");
 const filterBtn = $("#filterBtn");
-const themeBtn = $("#themeBtn");
+const homeMenuBtn = $("#homeMenuBtn");
 
 const gridEl = $("#grid");
 const clueBar = $("#clueBar");
@@ -24,12 +24,16 @@ const kbd = $("#kbd");
 const hintBtn = $("#hintBtn");
 const menuBtn = $("#menuBtn");
 
+const homeMenu = $("#homeMenu");
+const homeThemeBtn = $("#homeThemeBtn");
+
+const themeMenu = $("#themeMenu");
+const sortMenu = $("#sortMenu");
+const filterMenu = $("#filterMenu");
+
 const hintMenu = $("#hintMenu");
 const mainMenu = $("#mainMenu");
 const restartConfirm = $("#restartConfirm");
-const sortMenu = $("#sortMenu");
-const filterMenu = $("#filterMenu");
-const themeMenu = $("#themeMenu");
 const congrats = $("#congrats");
 const congratsBody = $("#congratsBody");
 const congratsExitBtn = $("#congratsExitBtn");
@@ -44,27 +48,18 @@ const saveExitBtn = $("#saveExitBtn");
 const restartBtn = $("#restartBtn");
 const restartYesBtn = $("#restartYesBtn");
 
-let filterMode = localStorage.getItem("lovcrypticFilter") || "all";   // all | incomplete | completed | not_started
-let sortMode = localStorage.getItem("lovcrypticSort") || "newest";    // recent | newest | oldest
+let filterMode = localStorage.getItem("lovcrypticFilter") || "all";
+let sortMode = localStorage.getItem("lovcrypticSort") || "newest";
 
-let current = {
-  key: null,
-  psid: PSID_DEFAULT,
-  date: null,
-  spec: null,
-  progress: null,
-  selected: null
-};
+let current = { key:null, psid:PSID_DEFAULT, date:null, spec:null, progress:null, selected:null };
 
 let savePending = null;
 
-// Word-check persistence
 let correctWordIds = new Set();
 
-// Sync control
 let syncInFlight = false;
 
-// Timer “clock loop”
+// timer loop (RAF) so it stays visually ticking
 let clockRaf = null;
 let clockActive = false;
 let lastPaintedSecond = null;
@@ -81,7 +76,12 @@ async function init() {
 
   sortBtn.addEventListener("click", () => openSheet("sortMenu"));
   filterBtn.addEventListener("click", () => openSheet("filterMenu"));
-  themeBtn.addEventListener("click", () => openSheet("themeMenu"));
+  homeMenuBtn.addEventListener("click", () => openSheet("homeMenu"));
+
+  homeThemeBtn.addEventListener("click", () => {
+    closeSheet("homeMenu");
+    openSheet("themeMenu");
+  });
 
   hintBtn.addEventListener("click", () => openSheet("hintMenu"));
   menuBtn.addEventListener("click", () => openSheet("mainMenu"));
@@ -98,12 +98,13 @@ async function init() {
     const closeId = e.target?.getAttribute?.("data-close");
     if (closeId) closeSheet(closeId);
 
+    if (e.target === homeMenu) closeSheet("homeMenu");
+    if (e.target === themeMenu) closeSheet("themeMenu");
+    if (e.target === sortMenu) closeSheet("sortMenu");
+    if (e.target === filterMenu) closeSheet("filterMenu");
     if (e.target === hintMenu) closeSheet("hintMenu");
     if (e.target === mainMenu) closeSheet("mainMenu");
     if (e.target === restartConfirm) closeSheet("restartConfirm");
-    if (e.target === sortMenu) closeSheet("sortMenu");
-    if (e.target === filterMenu) closeSheet("filterMenu");
-    if (e.target === themeMenu) closeSheet("themeMenu");
     if (e.target === congrats) return;
 
     const s = e.target?.getAttribute?.("data-sort");
@@ -183,7 +184,7 @@ async function init() {
   });
 
   await renderHome();
-  kickSync(); // non-blocking
+  kickSync();
 }
 
 /* ---------- theme ---------- */
@@ -204,7 +205,6 @@ function applyLastUpdatedLabel() {
   const s = localStorage.getItem("lovcrypticLastUpdated");
   if (s) homeStatusEl.textContent = `Updated ${s}`;
 }
-
 function setLastUpdatedNow() {
   const d = new Date();
   const stamp = `${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,"0")}-${String(d.getDate()).padStart(2,"0")} ${String(d.getHours()).padStart(2,"0")}:${String(d.getMinutes()).padStart(2,"0")}`;
@@ -229,10 +229,9 @@ async function renderHome() {
     const timeMs = elapsedMs + (runningSince ? (Date.now() - runningSince) : 0);
 
     const lastOpenedAt = pr?.progress?.lastOpenedAt || 0;
-    return { p, pr, snap, isCompleted, timeMs, lastOpenedAt };
+    return { p, snap, isCompleted, timeMs, lastOpenedAt };
   });
 
-  // sorting
   if (sortMode === "recent") {
     items.sort((a,b) => (b.lastOpenedAt - a.lastOpenedAt) || (a.p.date < b.p.date ? 1 : -1));
   } else if (sortMode === "oldest") {
@@ -250,7 +249,6 @@ async function renderHome() {
     const startedByTime = timeMs > 0;
     const isNotStarted = !startedByTime;
 
-    // filters (exact)
     if (filterMode === "incomplete" && !(startedByTime && !isCompleted)) continue;
     if (filterMode === "completed" && !isCompleted) continue;
     if (filterMode === "not_started" && !isNotStarted) continue;
@@ -320,7 +318,6 @@ async function autoSync() {
 
   if (!newest) await tryCache(psid, today);
 
-  // forward fill (new puzzles)
   const forwardCap = 10;
   let cursor = addDays(newest || today, 1);
   for (let i = 0; cursor <= today && i < forwardCap; i++) {
@@ -328,7 +325,6 @@ async function autoSync() {
     cursor = addDays(cursor, 1);
   }
 
-  // backward probe (older puzzles)
   const state = loadSyncState();
   let backCursor = state.backCursor || addDays(oldest || today, -1);
   let failStreak = state.failStreak || 0;
@@ -403,7 +399,7 @@ async function openPuzzle(psid, date) {
   const saved = await idb.get("progress", key);
   const progress = saved?.progress || freshProgress(spec);
 
-  progress.lastOpenedAt = Date.now(); // for Recent sort
+  progress.lastOpenedAt = Date.now();
   await writeProgress(key, spec, progress);
 
   current = { key, psid, date, spec, progress, selected: null };
@@ -422,7 +418,6 @@ async function openPuzzle(psid, date) {
 
   setTimeout(() => kbd.focus(), 50);
 
-  // start timer + clock loop
   await startTimerIfOpen(true);
 
   if (progress.wordChecks) {
@@ -460,13 +455,11 @@ async function restartPuzzle() {
   showClue(null);
   computeCellSize(current.spec.rows, current.spec.cols);
 
-  // timer MUST reset + visibly tick immediately
   await forceRestartTimer();
-
   await autosave(true);
 }
 
-/* ---------- timer (bulletproof) ---------- */
+/* ---------- timer (RAF loop) ---------- */
 
 function getElapsedMs(progress) {
   const base = progress.elapsedMs || 0;
@@ -477,7 +470,7 @@ function paintTimer() {
   if (!current.progress) return;
   const ms = getElapsedMs(current.progress);
   const s = Math.floor(ms / 1000);
-  if (s === lastPaintedSecond) return; // avoid excessive DOM writes
+  if (s === lastPaintedSecond) return;
   lastPaintedSecond = s;
   timerEl.textContent = fmtTime(ms);
 }
@@ -510,30 +503,20 @@ async function startTimerIfOpen(ensureVisible = false) {
     return;
   }
 
-  // ensure runningSince is set (timer “running”)
-  if (!current.progress.runningSince) {
-    current.progress.runningSince = Date.now();
-  }
+  if (!current.progress.runningSince) current.progress.runningSince = Date.now();
 
   startClockLoop();
-
-  if (ensureVisible) {
-    lastPaintedSecond = null;
-    paintTimer();
-  }
+  if (ensureVisible) { lastPaintedSecond = null; paintTimer(); }
 
   await autosave(true);
 }
 
 async function forceRestartTimer() {
   stopClockLoop();
-
   current.progress.elapsedMs = 0;
   current.progress.runningSince = Date.now();
-
   timerEl.textContent = "00:00";
   lastPaintedSecond = null;
-
   startClockLoop();
 }
 
@@ -695,7 +678,7 @@ function computeCellSize(rows, cols) {
   gridEl.style.setProperty("--cell", `${cell}px`);
 }
 
-/* ---------- selection + clue ---------- */
+/* ---------- selection + clue (NO across/down text) ---------- */
 
 function onCellTap(cellIndex) {
   if (!current.spec || !current.progress) return;
@@ -766,9 +749,9 @@ function showCurrentClue() {
   const w = current.spec.wordMap.get(current.selected.wordId);
   if (!w) { showClue(null); return; }
 
-  const dirName = w.dir === "a" ? "Across" : "Down";
+  // Remove “Across/Down” entirely:
   const hasLen = /\(\s*\d+\s*\)\s*$/.test((w.clue || "").trim());
-  const text = hasLen ? `${dirName} • ${w.clue}` : `${dirName} • ${w.clue} (${w.len})`;
+  const text = hasLen ? `${w.clue}` : `${w.clue} (${w.len})`;
   showClue(text);
 }
 
@@ -783,7 +766,7 @@ function showClue(text) {
   if (current.spec) computeCellSize(current.spec.rows, current.spec.cols);
 }
 
-/* ---------- word checks (verified correct) ---------- */
+/* ---------- word checks (locked letters) ---------- */
 
 function clearAllGreen() {
   for (const el of gridEl.children) el.classList.remove("wordOk");
@@ -823,13 +806,12 @@ function isWordFilledAndCorrect(w) {
 }
 
 function cellIsVerifiedCorrect(cellIndex) {
-  // if any verified-correct word contains this cell, it is “locked”
   const m = current.spec.cellToWords[cellIndex];
   const ids = [...(m.a || []), ...(m.d || [])];
   return ids.some(id => correctWordIds.has(id));
 }
 
-/* ---------- typing (backspace rule enforced) ---------- */
+/* ---------- typing (prevent overwrite on verified letters) ---------- */
 
 async function onKeyDown(e) {
   if (!current.spec || !current.progress || !current.selected) return;
@@ -842,19 +824,18 @@ async function onKeyDown(e) {
 
   if (/^[a-zA-Z]$/.test(key)) {
     e.preventDefault();
+
+    // REQUIRED: if checks ON and cell is part of a verified-correct word,
+    // do not allow overwrite; advance selection instead.
+    if (current.progress.wordChecks && cellIsVerifiedCorrect(cellIndex)) {
+      advanceForward(wordId, cellIndex);
+      return;
+    }
+
     setCell(cellIndex, key.toUpperCase());
     await autosave();
 
-    if (wordId) {
-      const w = current.spec.wordMap.get(wordId);
-      const pos = w.cells.indexOf(cellIndex);
-      if (pos >= 0 && pos < w.cells.length - 1) {
-        setSelection({ cellIndex: w.cells[pos + 1], wordId, dir: w.dir });
-      } else {
-        const next = nextWordAfter(wordId) || firstWord();
-        if (next) setSelection({ cellIndex: next.cells[0], wordId: next.id, dir: next.dir });
-      }
-    }
+    advanceForward(wordId, cellIndex);
     return;
   }
 
@@ -863,14 +844,12 @@ async function onKeyDown(e) {
 
     const filledHere = getCell(cellIndex);
 
-    // REQUIRED: if checks ON and this is verified-correct, do NOT delete.
-    // Still move back one cell “as usual”.
+    // do not delete verified-correct letters; move back as usual
     if (filledHere && current.progress.wordChecks && cellIsVerifiedCorrect(cellIndex)) {
       moveBackOneCell(wordId, cellIndex, { deletePrev: false });
       return;
     }
 
-    // Normal behavior
     if (filledHere) {
       setCell(cellIndex, "");
       await autosave();
@@ -879,6 +858,19 @@ async function onKeyDown(e) {
 
     moveBackOneCell(wordId, cellIndex, { deletePrev: true });
     return;
+  }
+}
+
+function advanceForward(wordId, cellIndex) {
+  if (!wordId) return;
+  const w = current.spec.wordMap.get(wordId);
+  const pos = w.cells.indexOf(cellIndex);
+
+  if (pos >= 0 && pos < w.cells.length - 1) {
+    setSelection({ cellIndex: w.cells[pos + 1], wordId, dir: w.dir });
+  } else {
+    const next = nextWordAfter(wordId) || firstWord();
+    if (next) setSelection({ cellIndex: next.cells[0], wordId: next.id, dir: next.dir });
   }
 }
 
@@ -894,7 +886,7 @@ function moveBackOneCell(wordId, cellIndex, opts = { deletePrev: true }) {
   if (!opts.deletePrev) return;
 
   if (getCell(prev)) {
-    if (current.progress.wordChecks && cellIsVerifiedCorrect(prev)) return; // also protect prev
+    if (current.progress.wordChecks && cellIsVerifiedCorrect(prev)) return;
     setCell(prev, "");
     autosave();
   }
@@ -1000,6 +992,105 @@ function closeSheet(id) {
   $(`#${id}`).classList.add("hidden");
   const anyOpen = document.querySelector(".sheet:not(.hidden)");
   if (!anyOpen) document.body.classList.remove("modalOpen");
+}
+
+/* ---------- timer helpers ---------- */
+
+function startClockLoop() {
+  if (clockActive) return;
+  clockActive = true;
+  lastPaintedSecond = null;
+
+  const tick = () => {
+    if (!clockActive) return;
+    paintTimer();
+    clockRaf = requestAnimationFrame(tick);
+  };
+  clockRaf = requestAnimationFrame(tick);
+}
+function stopClockLoop() {
+  clockActive = false;
+  if (clockRaf) cancelAnimationFrame(clockRaf);
+  clockRaf = null;
+}
+
+function getElapsedMs(progress) {
+  const base = progress.elapsedMs || 0;
+  return progress.runningSince ? base + (Date.now() - progress.runningSince) : base;
+}
+function paintTimer() {
+  if (!current.progress) return;
+  const ms = getElapsedMs(current.progress);
+  const s = Math.floor(ms / 1000);
+  if (s === lastPaintedSecond) return;
+  lastPaintedSecond = s;
+  timerEl.textContent = fmtTime(ms);
+}
+async function startTimerIfOpen(ensureVisible=false) {
+  if (!current.key || !current.progress) return;
+  if (current.progress.completed) { stopClockLoop(); paintTimer(); return; }
+  if (!current.progress.runningSince) current.progress.runningSince = Date.now();
+  startClockLoop();
+  if (ensureVisible) { lastPaintedSecond=null; paintTimer(); }
+  await autosave(true);
+}
+async function forceRestartTimer() {
+  stopClockLoop();
+  current.progress.elapsedMs = 0;
+  current.progress.runningSince = Date.now();
+  timerEl.textContent = "00:00";
+  lastPaintedSecond = null;
+  startClockLoop();
+}
+async function stopTimerAndSave() {
+  if (!current.key || !current.progress) return;
+  stopClockLoop();
+  if (current.progress.runningSince) {
+    const now = Date.now();
+    current.progress.elapsedMs = (current.progress.elapsedMs || 0) + (now - current.progress.runningSince);
+    current.progress.runningSince = null;
+  }
+  lastPaintedSecond = null;
+  paintTimer();
+  await autosave(true);
+}
+function fmtTime(ms) {
+  const s = Math.floor(ms / 1000);
+  const mm = String(Math.floor(s / 60)).padStart(2, "0");
+  const ss = String(s % 60).padStart(2, "0");
+  return `${mm}:${ss}`;
+}
+
+/* ---------- persistence ---------- */
+
+function snapshot(spec, progress) {
+  let total = 0, filled = 0, correctFilled = 0;
+  for (let i = 0; i < spec.solution.length; i++) {
+    if (spec.isBlock[i]) continue;
+    total++;
+    const got = (progress.fills[i] || "").toUpperCase();
+    if (got) {
+      filled++;
+      const want = (spec.solution[i] || "").toUpperCase();
+      if (got === want) correctFilled++;
+    }
+  }
+  const pct = total ? Math.round((filled / total) * 100) : 0;
+  const allCorrect = (filled === total) && (correctFilled === total);
+  return { total, filled, pct, allCorrect };
+}
+async function writeProgress(key, spec, progress) {
+  const snap = snapshot(spec, progress);
+  await idb.put("progress", { key, updatedAt: Date.now(), progress, snap });
+}
+async function autosave(immediate=false) {
+  if (!current.key || !current.spec || !current.progress) return;
+  if (savePending) clearTimeout(savePending);
+  const delay = immediate ? 0 : 120;
+  savePending = setTimeout(async () => {
+    savePending = null;
+    await writeProgress(current.key, current.spec, current.progress);
+  }, delay);
 }
 
 /* ---------- utils ---------- */
