@@ -1,131 +1,131 @@
 :root{
-  /* Default: LIGHT */
+  /* Default: LIGHT (stronger accents) */
   color-scheme: light;
-  --bg:#f6f7fb;
+  --bg:#f1f4ff;
   --panel:#ffffff;
-  --line:rgba(20,20,40,.14);
-  --text:rgba(15,15,25,.96);
-  --muted:rgba(15,15,25,.62);
+  --line:rgba(20,20,40,.16);
+  --text:rgba(14,14,22,.96);
+  --muted:rgba(14,14,22,.62);
 
-  /* Grid */
-  --cell-bg:rgba(255,255,255,.92);
-  --cell-text:rgba(15,15,25,.95);
-  --block-bg:rgba(0,0,0,.18);   /* darker than cell boxes, not black */
-  --grid-line:rgba(20,20,40,.18);
+  /* Grid: ensure input cells lighter than blocks */
+  --cell-bg:rgba(255,255,255,.94);
+  --cell-text:rgba(14,14,22,.95);
+  --block-bg:rgba(0,0,0,.24);
+  --grid-line:rgba(20,20,40,.20);
 
   /* Accents */
-  --sel:rgba(0,120,255,.92);
-  --word:rgba(0,120,255,.14);
-  --word-ok:rgba(0,160,90,.18);
+  --sel:rgba(0,110,255,.95);
+  --word:rgba(0,110,255,.18);     /* selected word highlight (blue) */
+  --word-ok:rgba(0,170,95,.26);   /* persistent correct-word tint (green) */
 
   /* Sheets */
-  --sheet-dim:rgba(0,0,0,.22);
-  --sheet-bg:rgba(255,255,255,.98);
+  --sheet-dim:rgba(0,0,0,.24);
+  --sheet-bg:rgba(255,255,255,.99);
 }
 
 body[data-theme="dark"]{
   color-scheme: dark;
-  --bg:#0f0f12;
-  --panel:rgba(255,255,255,.06);
-  --line:rgba(255,255,255,.16);
+  --bg:#0e0f14;
+  --panel:rgba(255,255,255,.07);
+  --line:rgba(255,255,255,.18);
   --text:rgba(255,255,255,.94);
-  --muted:rgba(255,255,255,.66);
+  --muted:rgba(255,255,255,.68);
 
-  --cell-bg:rgba(255,255,255,.08);
+  --cell-bg:rgba(255,255,255,.10);
   --cell-text:rgba(255,255,255,.95);
-  --block-bg:rgba(255,255,255,.26);
-  --grid-line:rgba(255,255,255,.18);
+  --block-bg:rgba(255,255,255,.30);
+  --grid-line:rgba(255,255,255,.20);
 
-  --sel:rgba(120,180,255,.95);
-  --word:rgba(120,180,255,.20);
-  --word-ok:rgba(70,210,140,.22);
+  --sel:rgba(140,190,255,.98);
+  --word:rgba(140,190,255,.26);
+  --word-ok:rgba(80,220,150,.30);
 
-  --sheet-dim:rgba(0,0,0,.42);
-  --sheet-bg:rgba(18,18,22,.98);
+  --sheet-dim:rgba(0,0,0,.46);
+  --sheet-bg:rgba(18,18,22,.99);
 }
 
 body[data-theme="sage"]{
   color-scheme: light;
-  --bg:#f3f7f4;
+  --bg:#eaf4ee;
   --panel:#ffffff;
-  --line:rgba(20,40,30,.14);
+  --line:rgba(18,42,30,.18);
   --text:rgba(10,20,15,.96);
-  --muted:rgba(10,20,15,.60);
+  --muted:rgba(10,20,15,.62);
 
-  --cell-bg:rgba(255,255,255,.92);
+  --cell-bg:rgba(255,255,255,.94);
   --cell-text:rgba(10,20,15,.95);
-  --block-bg:rgba(10,20,15,.20);
-  --grid-line:rgba(20,40,30,.18);
+  --block-bg:rgba(10,20,15,.26);
+  --grid-line:rgba(18,42,30,.22);
 
-  --sel:rgba(20,140,90,.95);
-  --word:rgba(20,140,90,.16);
-  --word-ok:rgba(20,140,90,.22);
+  --sel:rgba(18,150,95,.96);
+  --word:rgba(18,150,95,.20);
+  --word-ok:rgba(18,150,95,.28);
 
-  --sheet-dim:rgba(0,0,0,.20);
-  --sheet-bg:rgba(255,255,255,.98);
+  --sheet-dim:rgba(0,0,0,.22);
+  --sheet-bg:rgba(255,255,255,.99);
 }
 
 body[data-theme="lavender"]{
   color-scheme: light;
-  --bg:#f6f4fb;
+  --bg:#f0ebff;
   --panel:#ffffff;
-  --line:rgba(40,20,60,.14);
-  --text:rgba(25,15,40,.96);
-  --muted:rgba(25,15,40,.60);
+  --line:rgba(40,20,70,.18);
+  --text:rgba(25,15,45,.96);
+  --muted:rgba(25,15,45,.62);
 
-  --cell-bg:rgba(255,255,255,.92);
-  --cell-text:rgba(25,15,40,.95);
-  --block-bg:rgba(25,15,40,.18);
-  --grid-line:rgba(40,20,60,.18);
+  --cell-bg:rgba(255,255,255,.94);
+  --cell-text:rgba(25,15,45,.95);
+  --block-bg:rgba(25,15,45,.24);
+  --grid-line:rgba(40,20,70,.22);
 
-  --sel:rgba(120,80,220,.92);
-  --word:rgba(120,80,220,.14);
-  --word-ok:rgba(0,160,90,.18);
+  --sel:rgba(110,70,235,.96);
+  --word:rgba(110,70,235,.20);
+  --word-ok:rgba(0,170,95,.26);
 
-  --sheet-dim:rgba(0,0,0,.20);
-  --sheet-bg:rgba(255,255,255,.98);
+  --sheet-dim:rgba(0,0,0,.22);
+  --sheet-bg:rgba(255,255,255,.99);
 }
 
 body[data-theme="ocean"]{
   color-scheme: light;
-  --bg:#f2f7fb;
+  --bg:#e8f4ff;
   --panel:#ffffff;
-  --line:rgba(10,40,70,.14);
+  --line:rgba(10,45,80,.18);
   --text:rgba(10,25,45,.96);
-  --muted:rgba(10,25,45,.60);
+  --muted:rgba(10,25,45,.62);
 
-  --cell-bg:rgba(255,255,255,.92);
+  --cell-bg:rgba(255,255,255,.94);
   --cell-text:rgba(10,25,45,.95);
-  --block-bg:rgba(10,25,45,.18);
-  --grid-line:rgba(10,40,70,.18);
+  --block-bg:rgba(10,25,45,.24);
+  --grid-line:rgba(10,45,80,.22);
 
-  --sel:rgba(0,120,180,.92);
-  --word:rgba(0,120,180,.14);
-  --word-ok:rgba(0,160,90,.18);
+  --sel:rgba(0,125,195,.96);
+  --word:rgba(0,125,195,.20);
+  --word-ok:rgba(0,170,95,.26);
 
-  --sheet-dim:rgba(0,0,0,.20);
-  --sheet-bg:rgba(255,255,255,.98);
+  --sheet-dim:rgba(0,0,0,.22);
+  --sheet-bg:rgba(255,255,255,.99);
 }
 
 body[data-theme="sand"]{
   color-scheme: light;
-  --bg:#fbf7ef;
+  --bg:#fff1dc;
   --panel:#ffffff;
-  --line:rgba(70,50,20,.14);
-  --text:rgba(35,25,10,.96);
-  --muted:rgba(35,25,10,.60);
+  --line:rgba(80,55,20,.18);
+  --text:rgba(38,25,10,.96);
+  --muted:rgba(38,25,10,.62);
 
-  --cell-bg:rgba(255,255,255,.92);
-  --cell-text:rgba(35,25,10,.95);
-  --block-bg:rgba(35,25,10,.20);
-  --grid-line:rgba(70,50,20,.18);
+  --cell-bg:rgba(255,255,255,.94);
+  --cell-text:rgba(38,25,10,.95);
+  --block-bg:rgba(38,25,10,.28);
+  --grid-line:rgba(80,55,20,.22);
 
-  --sel:rgba(200,120,40,.92);
-  --word:rgba(200,120,40,.14);
-  --word-ok:rgba(0,160,90,.18);
+  --sel:rgba(210,120,35,.96);
+  --word:rgba(210,120,35,.20);
+  --word-ok:rgba(0,170,95,.26);
 
-  --sheet-dim:rgba(0,0,0,.20);
-  --sheet-bg:rgba(255,255,255,.98);
+  --sheet-dim:rgba(0,0,0,.22);
+  --sheet-bg:rgba(255,255,255,.99);
 }
 
 *{box-sizing:border-box;}
@@ -184,9 +184,9 @@ h1{margin:0;font-size:20px;letter-spacing:.2px;}
   gap:10px;
   align-items:center;
 }
-
 .card small{color:var(--muted);}
 .pct{font-variant-numeric:tabular-nums;}
+
 .openBtn{
   border:1px solid var(--line);
   background:transparent;
@@ -214,16 +214,16 @@ h1{margin:0;font-size:20px;letter-spacing:.2px;}
 }
 
 .brandMini{
-  font-weight:800;
-  letter-spacing:.6px;
-  opacity:.9;
+  font-weight:900;
+  letter-spacing:.8px;
+  opacity:.92;
 }
 
 .timer{
   justify-self:center;
   font-variant-numeric:tabular-nums;
-  font-weight:800;
-  letter-spacing:.6px;
+  font-weight:900;
+  letter-spacing:.7px;
 }
 
 .topbarRight{display:flex;gap:10px;align-items:center;}
@@ -248,7 +248,7 @@ h1{margin:0;font-size:20px;letter-spacing:.2px;}
   user-select:none;
 }
 
-/* Put grid at top (not vertically centered) to avoid keyboard-induced scroll */
+/* Grid anchored at top */
 .gridShell{
   height:calc(100dvh - env(safe-area-inset-top) - env(safe-area-inset-bottom) - 52px - 40px);
   display:flex;
@@ -275,10 +275,13 @@ h1{margin:0;font-size:20px;letter-spacing:.2px;}
   height:var(--cell);
   background:var(--cell-bg);
   color:var(--cell-text);
-  font-weight:900;
+  font-weight:950;
   font-size:calc(var(--cell) * 0.58);
   text-transform:uppercase;
   border-radius:0;
+  /* crucial: don't float above sheets */
+  position:relative;
+  z-index:0;
 }
 
 .cell.block{
@@ -292,7 +295,7 @@ h1{margin:0;font-size:20px;letter-spacing:.2px;}
 .cell.selected{
   outline:2px solid var(--sel);
   outline-offset:-2px;
-  z-index:2;
+  z-index:0; /* keep at 0 so sheets always cover */
 }
 
 /* Invisible keyboard input */
@@ -300,15 +303,16 @@ h1{margin:0;font-size:20px;letter-spacing:.2px;}
   position:absolute;left:-9999px;top:-9999px;width:1px;height:1px;opacity:0;
 }
 
-/* Sheets */
+/* Sheets: always on top */
 .sheet{
-  position:absolute;
+  position:fixed;
   inset:0;
   background:var(--sheet-dim);
   display:grid;
   place-items:end center;
   padding:12px;
   padding-bottom:calc(12px + env(safe-area-inset-bottom));
+  z-index:9999;
 }
 
 .sheetCard{
@@ -318,19 +322,20 @@ h1{margin:0;font-size:20px;letter-spacing:.2px;}
   background:var(--sheet-bg);
   overflow:hidden;
   color:var(--text);
+  box-shadow:0 20px 60px rgba(0,0,0,.22);
 }
 
 .sheetTitle{
   padding:14px 14px 10px;
-  font-weight:850;
+  font-weight:950;
   letter-spacing:.2px;
 }
 
 .brandTitle{
-  font-weight:950;
-  letter-spacing:1.2px;
+  font-weight:1000;
+  letter-spacing:1.4px;
   text-transform:uppercase;
-  background:linear-gradient(90deg, rgba(0,120,255,.22), rgba(0,160,90,.18));
+  background:linear-gradient(90deg, rgba(0,110,255,.22), rgba(0,170,95,.18));
 }
 
 .sheetBody{
