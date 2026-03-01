@@ -1,4 +1,4 @@
-const CACHE = "cryptic-cache-v2";
+const CACHE = "lovcryptic-v3";
 const ASSETS = [
   "./",
   "./index.html",
