@@ -1,0 +1,93 @@
+:root { color-scheme: light dark; }
+* { box-sizing: border-box; }
+body {
+  margin: 0;
+  font-family: system-ui, -apple-system, Segoe UI, Roboto, Helvetica, Arial, sans-serif;
+  line-height: 1.25;
+}
+header {
+  display: flex; justify-content: space-between; align-items: center;
+  padding: 14px 14px 8px; border-bottom: 1px solid rgba(127,127,127,.25);
+}
+h1 { margin: 0; font-size: 20px; }
+.sub { margin: 4px 0 0; opacity: .75; font-size: 13px; }
+main { padding: 14px; display: grid; gap: 14px; max-width: 980px; margin: 0 auto; }
+.panel {
+  border: 1px solid rgba(127,127,127,.25);
+  border-radius: 12px;
+  padding: 12px;
+}
+.row {
+  display: grid; grid-template-columns: 110px 1fr auto;
+  gap: 10px; align-items: center; margin: 8px 0;
+}
+label { opacity: .85; font-size: 13px; }
+label.wide { grid-column: 1 / 2; }
+input {
+  padding: 10px; border-radius: 10px;
+  border: 1px solid rgba(127,127,127,.35);
+}
+button {
+  padding: 10px 12px; border-radius: 10px;
+  border: 1px solid rgba(127,127,127,.35);
+  background: rgba(127,127,127,.12);
+}
+button.ghost { background: transparent; }
+button.danger { border-color: rgba(255,0,0,.35); }
+.status { opacity: .9; font-size: 13px; }
+.details { margin-top: 10px; }
+.hint { opacity: .75; font-size: 13px; }
+
+.archive { display: grid; gap: 8px; }
+.card {
+  display: grid; grid-template-columns: 1fr auto; gap: 10px;
+  padding: 10px; border-radius: 12px;
+  border: 1px solid rgba(127,127,127,.25);
+}
+.card small { opacity: .75; }
+.card .pct { font-variant-numeric: tabular-nums; }
+
+.hidden { display: none; }
+
+.solverTop {
+  display: flex; justify-content: space-between; gap: 10px; flex-wrap: wrap;
+  align-items: center;
+}
+.meta { opacity: .75; font-size: 13px; margin-top: 2px; }
+.solverActions { display: flex; gap: 8px; flex-wrap: wrap; }
+
+.solverGridWrap { overflow: auto; padding: 10px 0; }
+.grid {
+  display: grid;
+  grid-auto-rows: 28px;
+  gap: 2px;
+  width: max-content;
+  border: 1px solid rgba(127,127,127,.25);
+  padding: 6px;
+  border-radius: 12px;
+}
+.cell {
+  width: 28px; height: 28px;
+  text-align: center;
+  border-radius: 6px;
+  border: 1px solid rgba(127,127,127,.35);
+  font-weight: 700;
+  text-transform: uppercase;
+}
+.cell.black {
+  background: rgba(127,127,127,.35);
+  border-color: transparent;
+}
+.cell.bad { outline: 2px solid rgba(255,0,0,.45); }
+.cell.good { outline: 2px solid rgba(0,180,0,.45); }
+
+.cluesWrap {
+  display: grid;
+  grid-template-columns: 1fr;
+  gap: 12px;
+}
+@media (min-width: 800px) {
+  .cluesWrap { grid-template-columns: 1fr 1fr; }
+}
+ol { margin: 6px 0 0; padding-left: 18px; }
+li { margin: 6px 0; }
