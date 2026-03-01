@@ -7,10 +7,10 @@ function openDB() {
     req.onupgradeneeded = () => {
       const db = req.result;
       if (!db.objectStoreNames.contains("puzzles")) {
-        db.createObjectStore("puzzles", { keyPath: "key" }); // key = `${psid}|${date}`
+        db.createObjectStore("puzzles", { keyPath: "key" }); // `${psid}|${date}`
       }
       if (!db.objectStoreNames.contains("progress")) {
-        db.createObjectStore("progress", { keyPath: "key" }); // key = `${psid}|${date}`
+        db.createObjectStore("progress", { keyPath: "key" }); // same key
       }
     };
     req.onsuccess = () => resolve(req.result);
@@ -40,9 +40,6 @@ export async function get(store, key) {
     req.onsuccess = () => resolve(req.result || null);
     req.onerror = () => reject(req.error);
   });
-}
-export async function del(store, key) {
-  return tx(store, "readwrite", (s) => s.delete(key));
 }
 export async function getAll(store) {
   const db = await openDB();
