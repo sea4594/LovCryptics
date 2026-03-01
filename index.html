@@ -17,9 +17,9 @@
         <div id="homeStatus" class="muted">Syncing…</div>
       </div>
       <div class="homeActions">
-        <button id="sortBtn" class="chip" aria-label="Sort">Sort</button>
-        <button id="filterBtn" class="chip" aria-label="Filter">Filter</button>
-        <button id="themeBtn" class="chip" aria-label="Theme">Theme</button>
+        <button id="sortBtn" class="chip" type="button">Sort</button>
+        <button id="filterBtn" class="chip" type="button">Filter</button>
+        <button id="themeBtn" class="chip" type="button">Theme</button>
       </div>
     </div>
 
@@ -32,8 +32,8 @@
       <div class="brandMini">LovCryptic</div>
       <div class="timer" id="timer">00:00</div>
       <div class="topbarRight">
-        <button id="hintBtn" class="iconBtn" aria-label="Hints">Hint</button>
-        <button id="menuBtn" class="iconBtn" aria-label="Menu">Menu</button>
+        <button id="hintBtn" class="iconBtn" type="button">Hint</button>
+        <button id="menuBtn" class="iconBtn" type="button">Menu</button>
       </div>
     </div>
 
@@ -46,78 +46,84 @@
     <input id="kbd" class="kbd" autocomplete="off" autocapitalize="characters" spellcheck="false" />
   </main>
 
-  <!-- Sheets -->
+  <!-- HINTS -->
   <div id="hintMenu" class="sheet hidden" role="dialog" aria-modal="true">
     <div class="sheetCard">
       <div class="sheetTitle">Hints</div>
-      <button class="sheetItem" id="revealLetterBtn">Reveal selected letter</button>
-      <button class="sheetItem" id="revealWordBtn">Reveal selected word</button>
-      <button class="sheetItem" id="checkWordBtn">Check selected word (delete wrong)</button>
-      <button class="sheetItem" id="checkPuzzleBtn">Check entire puzzle (delete wrong)</button>
+      <button class="sheetItem" id="revealLetterBtn" type="button">Reveal selected letter</button>
+      <button class="sheetItem" id="revealWordBtn" type="button">Reveal selected word</button>
+      <button class="sheetItem" id="checkWordBtn" type="button">Check selected word (delete wrong)</button>
+      <button class="sheetItem" id="checkPuzzleBtn" type="button">Check entire puzzle (delete wrong)</button>
       <div class="sheetDivider"></div>
-      <button class="sheetItem" id="toggleChecksBtn" aria-pressed="false">Word checks: Off</button>
-      <button class="sheetCancel" data-close="hintMenu">Cancel</button>
+      <button class="sheetItem" id="toggleChecksBtn" type="button" aria-pressed="false">Word checks: Off</button>
+      <button class="sheetCancel" type="button" data-close="hintMenu">Cancel</button>
     </div>
   </div>
 
+  <!-- MAIN MENU -->
   <div id="mainMenu" class="sheet hidden" role="dialog" aria-modal="true">
     <div class="sheetCard">
       <div class="sheetTitle brandTitle">LovCryptic</div>
-      <button class="sheetItem" id="saveExitBtn">Exit to menu</button>
-      <button class="sheetItem danger" id="restartBtn">Restart</button>
-      <button class="sheetCancel" data-close="mainMenu">Cancel</button>
+      <button class="sheetItem" id="saveExitBtn" type="button">Exit to menu</button>
+      <button class="sheetItem danger" id="restartBtn" type="button">Restart</button>
+      <button class="sheetCancel" type="button" data-close="mainMenu">Cancel</button>
     </div>
   </div>
 
+  <!-- RESTART CONFIRM -->
   <div id="restartConfirm" class="sheet hidden" role="dialog" aria-modal="true">
     <div class="sheetCard">
       <div class="sheetTitle">Restart puzzle?</div>
       <div class="sheetBody">This will clear all entries and reset your timer for this puzzle.</div>
-      <button class="sheetItem danger" id="restartYesBtn">Yes, restart</button>
-      <button class="sheetCancel" data-close="restartConfirm">Cancel</button>
+      <button class="sheetItem danger" id="restartYesBtn" type="button">Yes, restart</button>
+      <button class="sheetCancel" type="button" data-close="restartConfirm">Cancel</button>
     </div>
   </div>
 
+  <!-- SORT -->
   <div id="sortMenu" class="sheet hidden" role="dialog" aria-modal="true">
     <div class="sheetCard">
       <div class="sheetTitle">Sort</div>
-      <button class="sheetItem" data-sort="recent">Recent</button>
-      <button class="sheetItem" data-sort="newest">Newest → Oldest</button>
-      <button class="sheetItem" data-sort="oldest">Oldest → Newest</button>
-      <button class="sheetCancel" data-close="sortMenu">Cancel</button>
+      <button class="sheetItem" type="button" data-sort="recent">Recent</button>
+      <button class="sheetItem" type="button" data-sort="newest">Newest → Oldest</button>
+      <button class="sheetItem" type="button" data-sort="oldest">Oldest → Newest</button>
+      <button class="sheetCancel" type="button" data-close="sortMenu">Cancel</button>
     </div>
   </div>
 
+  <!-- FILTER -->
   <div id="filterMenu" class="sheet hidden" role="dialog" aria-modal="true">
     <div class="sheetCard">
       <div class="sheetTitle">Filter</div>
-      <button class="sheetItem" data-filter="all">All</button>
-      <button class="sheetItem" data-filter="incomplete">Incomplete</button>
-      <button class="sheetItem" data-filter="completed">Completed</button>
-      <button class="sheetItem" data-filter="not_started">Not started</button>
-      <button class="sheetCancel" data-close="filterMenu">Cancel</button>
+      <button class="sheetItem" type="button" data-filter="all">All</button>
+      <button class="sheetItem" type="button" data-filter="incomplete">Incomplete</button>
+      <button class="sheetItem" type="button" data-filter="completed">Completed</button>
+      <button class="sheetItem" type="button" data-filter="not_started">Not started</button>
+      <button class="sheetCancel" type="button" data-close="filterMenu">Cancel</button>
     </div>
   </div>
 
+  <!-- THEME -->
   <div id="themeMenu" class="sheet hidden" role="dialog" aria-modal="true">
     <div class="sheetCard">
       <div class="sheetTitle">Theme</div>
-      <button class="sheetItem" data-theme="light">Classic Light</button>
-      <button class="sheetItem" data-theme="dark">Classic Dark</button>
+      <button class="sheetItem" type="button" data-theme="light">Classic Light</button>
+      <button class="sheetItem" type="button" data-theme="dark">Classic Dark</button>
       <div class="sheetDivider"></div>
-      <button class="sheetItem" data-theme="sage">Sage</button>
-      <button class="sheetItem" data-theme="lavender">Lavender</button>
-      <button class="sheetItem" data-theme="ocean">Ocean</button>
-      <button class="sheetItem" data-theme="sand">Sand</button>
-      <button class="sheetCancel" data-close="themeMenu">Cancel</button>
+      <button class="sheetItem" type="button" data-theme="sage">Sage</button>
+      <button class="sheetItem" type="button" data-theme="lavender">Lavender</button>
+      <button class="sheetItem" type="button" data-theme="ocean">Ocean</button>
+      <button class="sheetItem" type="button" data-theme="sand">Sand</button>
+      <button class="sheetCancel" type="button" data-close="themeMenu">Cancel</button>
     </div>
   </div>
 
+  <!-- CONGRATS -->
   <div id="congrats" class="sheet hidden" role="dialog" aria-modal="true">
     <div class="sheetCard">
       <div class="sheetTitle">🎉 Congratulations</div>
       <div class="sheetBody" id="congratsBody">Solved in 00:00</div>
-      <button class="sheetItem" id="congratsExitBtn">Exit to menu</button>
+      <button class="sheetItem" id="congratsExitBtn" type="button">Exit to menu</button>
     </div>
   </div>
 
