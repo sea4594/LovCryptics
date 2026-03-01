@@ -3,6 +3,7 @@ import * as idb from "./idb.js";
 const API_BASE = "";
 const PSID_DEFAULT = "100000160";
 const FETCH_TIMEOUT_MS = 8000;
+const HARD_SYNC_TIMEOUT_MS = 15000;
 
 const $ = (s) => document.querySelector(s);
 
@@ -54,12 +55,10 @@ let sortMode = localStorage.getItem("lovcrypticSort") || "newest";
 let current = { key:null, psid:PSID_DEFAULT, date:null, spec:null, progress:null, selected:null };
 
 let savePending = null;
-
 let correctWordIds = new Set();
-
 let syncInFlight = false;
 
-// timer loop (RAF) so it stays visually ticking
+// timer loop (RAF)
 let clockRaf = null;
 let clockActive = false;
 let lastPaintedSecond = null;
@@ -67,12 +66,11 @@ let lastPaintedSecond = null;
 init();
 
 async function init() {
+  // --- Service worker: auto-update + auto-reload so GitHub deploys appear ---
+  await registerServiceWorker();
+
   applySavedTheme();
   applyLastUpdatedLabel();
-
-  if ("serviceWorker" in navigator) {
-    try { await navigator.serviceWorker.register("./sw.js"); } catch {}
-  }
 
   sortBtn.addEventListener("click", () => openSheet("sortMenu"));
   filterBtn.addEventListener("click", () => openSheet("filterMenu"));
@@ -137,6 +135,7 @@ async function init() {
 
   toggleChecksBtn.addEventListener("click", async () => {
     if (!current.progress) return;
+
     current.progress.wordChecks = !current.progress.wordChecks;
     toggleChecksBtn.setAttribute("aria-pressed", String(current.progress.wordChecks));
     toggleChecksBtn.textContent = `Word checks: ${current.progress.wordChecks ? "On" : "Off"}`;
@@ -187,7 +186,39 @@ async function init() {
   kickSync();
 }
 
-/* ---------- theme ---------- */
+/* ------------------ SW registration (auto update + reload) ------------------ */
+
+async function registerServiceWorker() {
+  if (!("serviceWorker" in navigator)) return;
+
+  try {
+    const reg = await navigator.serviceWorker.register("./sw.js");
+
+    if (reg.waiting) {
+      reg.waiting.postMessage({ type: "SKIP_WAITING" });
+    }
+
+    reg.addEventListener("updatefound", () => {
+      const nw = reg.installing;
+      if (!nw) return;
+      nw.addEventListener("statechange", () => {
+        if (nw.state === "installed" && navigator.serviceWorker.controller) {
+          nw.postMessage({ type: "SKIP_WAITING" });
+        }
+      });
+    });
+
+    navigator.serviceWorker.addEventListener("controllerchange", () => {
+      if (window.__lovcryptic_reloaded) return;
+      window.__lovcryptic_reloaded = true;
+      window.location.reload();
+    });
+  } catch {
+    // SW is optional; app still runs
+  }
+}
+
+/* ------------------ theme ------------------ */
 
 function applySavedTheme() {
   const t = localStorage.getItem("lovcrypticTheme") || "light";
@@ -199,12 +230,13 @@ function setTheme(theme, opts = {}) {
   if (!opts.silent && current.spec) computeCellSize(current.spec.rows, current.spec.cols);
 }
 
-/* ---------- last updated label ---------- */
+/* ------------------ updated label ------------------ */
 
 function applyLastUpdatedLabel() {
   const s = localStorage.getItem("lovcrypticLastUpdated");
   if (s) homeStatusEl.textContent = `Updated ${s}`;
 }
+
 function setLastUpdatedNow() {
   const d = new Date();
   const stamp = `${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,"0")}-${String(d.getDate()).padStart(2,"0")} ${String(d.getHours()).padStart(2,"0")}:${String(d.getMinutes()).padStart(2,"0")}`;
@@ -212,7 +244,7 @@ function setLastUpdatedNow() {
   homeStatusEl.textContent = `Updated ${stamp}`;
 }
 
-/* ---------- home ---------- */
+/* ------------------ home render ------------------ */
 
 async function renderHome() {
   const puzzles = await idb.getAll("puzzles");
@@ -285,7 +317,15 @@ async function renderHome() {
   }
 }
 
-/* ---------- sync ---------- */
+/* ------------------ sync (hard timeout to prevent infinite “Syncing…”) ------------------ */
+
+function withTimeout(promise, ms) {
+  return new Promise((resolve, reject) => {
+    const t = setTimeout(() => reject(new Error("timeout")), ms);
+    promise.then((v) => { clearTimeout(t); resolve(v); })
+           .catch((e) => { clearTimeout(t); reject(e); });
+  });
+}
 
 function kickSync() {
   if (syncInFlight) return;
@@ -294,13 +334,14 @@ function kickSync() {
   homeStatusEl.textContent = "Syncing…";
   homeStatusEl.dataset.retry = "0";
 
-  autoSync()
+  withTimeout(autoSync(), HARD_SYNC_TIMEOUT_MS)
     .then(async () => {
       setLastUpdatedNow();
       await renderHome();
     })
     .catch(async () => {
-      homeStatusEl.textContent = "Sync failed — tap to retry";
+      const s = localStorage.getItem("lovcrypticLastUpdated");
+      homeStatusEl.textContent = s ? `Updated ${s} (offline)` : "Sync failed — tap to retry";
       homeStatusEl.dataset.retry = "1";
       await renderHome();
     })
@@ -374,7 +415,15 @@ async function fetchJson(url) {
   const ctrl = new AbortController();
   const t = setTimeout(() => ctrl.abort(), FETCH_TIMEOUT_MS);
   try {
-    const resp = await fetch(fetchUrl, { cache: "no-store", signal: ctrl.signal });
+    const resp = await fetch(fetchUrl, {
+      cache: "no-store",
+      signal: ctrl.signal,
+      headers: {
+        // discourage any intermediate caches
+        "Cache-Control": "no-store",
+        "Pragma": "no-cache",
+      },
+    });
     if (!resp.ok) throw new Error(`HTTP ${resp.status}`);
     const txt = await resp.text();
     return JSON.parse(txt);
@@ -383,7 +432,7 @@ async function fetchJson(url) {
   }
 }
 
-/* ---------- puzzle open/close ---------- */
+/* ------------------ puzzle open/close ------------------ */
 
 async function openPuzzle(psid, date) {
   const key = `${psid}|${date}`;
@@ -459,7 +508,7 @@ async function restartPuzzle() {
   await autosave(true);
 }
 
-/* ---------- timer (RAF loop) ---------- */
+/* ------------------ timer (RAF) ------------------ */
 
 function getElapsedMs(progress) {
   const base = progress.elapsedMs || 0;
@@ -543,7 +592,7 @@ function fmtTime(ms) {
   return `${mm}:${ss}`;
 }
 
-/* ---------- parse + persistence ---------- */
+/* ------------------ parse + persistence ------------------ */
 
 function parsePuzzle(apiJson) {
   const metaData = apiJson?.cells?.[0]?.meta?.data;
@@ -639,7 +688,7 @@ async function autosave(immediate = false) {
   }, delay);
 }
 
-/* ---------- grid + sizing ---------- */
+/* ------------------ grid + sizing ------------------ */
 
 function renderGrid(spec, progress) {
   gridEl.innerHTML = "";
@@ -678,7 +727,7 @@ function computeCellSize(rows, cols) {
   gridEl.style.setProperty("--cell", `${cell}px`);
 }
 
-/* ---------- selection + clue (NO across/down text) ---------- */
+/* ------------------ selection + clue (no Across/Down) ------------------ */
 
 function onCellTap(cellIndex) {
   if (!current.spec || !current.progress) return;
@@ -749,7 +798,6 @@ function showCurrentClue() {
   const w = current.spec.wordMap.get(current.selected.wordId);
   if (!w) { showClue(null); return; }
 
-  // Remove “Across/Down” entirely:
   const hasLen = /\(\s*\d+\s*\)\s*$/.test((w.clue || "").trim());
   const text = hasLen ? `${w.clue}` : `${w.clue} (${w.len})`;
   showClue(text);
@@ -766,7 +814,7 @@ function showClue(text) {
   if (current.spec) computeCellSize(current.spec.rows, current.spec.cols);
 }
 
-/* ---------- word checks (locked letters) ---------- */
+/* ------------------ word checks (verified correct) ------------------ */
 
 function clearAllGreen() {
   for (const el of gridEl.children) el.classList.remove("wordOk");
@@ -811,7 +859,7 @@ function cellIsVerifiedCorrect(cellIndex) {
   return ids.some(id => correctWordIds.has(id));
 }
 
-/* ---------- typing (prevent overwrite on verified letters) ---------- */
+/* ------------------ typing (block overwrite on verified-correct) ------------------ */
 
 async function onKeyDown(e) {
   if (!current.spec || !current.progress || !current.selected) return;
@@ -825,8 +873,7 @@ async function onKeyDown(e) {
   if (/^[a-zA-Z]$/.test(key)) {
     e.preventDefault();
 
-    // REQUIRED: if checks ON and cell is part of a verified-correct word,
-    // do not allow overwrite; advance selection instead.
+    // If checks ON and this cell is part of any verified-correct word: no overwrite.
     if (current.progress.wordChecks && cellIsVerifiedCorrect(cellIndex)) {
       advanceForward(wordId, cellIndex);
       return;
@@ -834,7 +881,6 @@ async function onKeyDown(e) {
 
     setCell(cellIndex, key.toUpperCase());
     await autosave();
-
     advanceForward(wordId, cellIndex);
     return;
   }
@@ -844,7 +890,7 @@ async function onKeyDown(e) {
 
     const filledHere = getCell(cellIndex);
 
-    // do not delete verified-correct letters; move back as usual
+    // If checks ON and verified-correct: do not delete; move back.
     if (filledHere && current.progress.wordChecks && cellIsVerifiedCorrect(cellIndex)) {
       moveBackOneCell(wordId, cellIndex, { deletePrev: false });
       return;
@@ -907,7 +953,7 @@ function setCell(i, v) {
   }
 }
 
-/* ---------- hints ---------- */
+/* ------------------ hints ------------------ */
 
 async function hintRevealLetter() {
   if (!current.selected) return;
@@ -973,7 +1019,7 @@ async function completePuzzle() {
   openSheet("congrats");
 }
 
-/* ---------- sequencing ---------- */
+/* ------------------ sequencing ------------------ */
 
 function firstWord() { return current.spec.words[0] || null; }
 function nextWordAfter(wordId) {
@@ -982,7 +1028,7 @@ function nextWordAfter(wordId) {
   return current.spec.words[idx + 1] || null;
 }
 
-/* ---------- sheets ---------- */
+/* ------------------ sheets ------------------ */
 
 function openSheet(id) {
   document.body.classList.add("modalOpen");
@@ -994,106 +1040,7 @@ function closeSheet(id) {
   if (!anyOpen) document.body.classList.remove("modalOpen");
 }
 
-/* ---------- timer helpers ---------- */
-
-function startClockLoop() {
-  if (clockActive) return;
-  clockActive = true;
-  lastPaintedSecond = null;
-
-  const tick = () => {
-    if (!clockActive) return;
-    paintTimer();
-    clockRaf = requestAnimationFrame(tick);
-  };
-  clockRaf = requestAnimationFrame(tick);
-}
-function stopClockLoop() {
-  clockActive = false;
-  if (clockRaf) cancelAnimationFrame(clockRaf);
-  clockRaf = null;
-}
-
-function getElapsedMs(progress) {
-  const base = progress.elapsedMs || 0;
-  return progress.runningSince ? base + (Date.now() - progress.runningSince) : base;
-}
-function paintTimer() {
-  if (!current.progress) return;
-  const ms = getElapsedMs(current.progress);
-  const s = Math.floor(ms / 1000);
-  if (s === lastPaintedSecond) return;
-  lastPaintedSecond = s;
-  timerEl.textContent = fmtTime(ms);
-}
-async function startTimerIfOpen(ensureVisible=false) {
-  if (!current.key || !current.progress) return;
-  if (current.progress.completed) { stopClockLoop(); paintTimer(); return; }
-  if (!current.progress.runningSince) current.progress.runningSince = Date.now();
-  startClockLoop();
-  if (ensureVisible) { lastPaintedSecond=null; paintTimer(); }
-  await autosave(true);
-}
-async function forceRestartTimer() {
-  stopClockLoop();
-  current.progress.elapsedMs = 0;
-  current.progress.runningSince = Date.now();
-  timerEl.textContent = "00:00";
-  lastPaintedSecond = null;
-  startClockLoop();
-}
-async function stopTimerAndSave() {
-  if (!current.key || !current.progress) return;
-  stopClockLoop();
-  if (current.progress.runningSince) {
-    const now = Date.now();
-    current.progress.elapsedMs = (current.progress.elapsedMs || 0) + (now - current.progress.runningSince);
-    current.progress.runningSince = null;
-  }
-  lastPaintedSecond = null;
-  paintTimer();
-  await autosave(true);
-}
-function fmtTime(ms) {
-  const s = Math.floor(ms / 1000);
-  const mm = String(Math.floor(s / 60)).padStart(2, "0");
-  const ss = String(s % 60).padStart(2, "0");
-  return `${mm}:${ss}`;
-}
-
-/* ---------- persistence ---------- */
-
-function snapshot(spec, progress) {
-  let total = 0, filled = 0, correctFilled = 0;
-  for (let i = 0; i < spec.solution.length; i++) {
-    if (spec.isBlock[i]) continue;
-    total++;
-    const got = (progress.fills[i] || "").toUpperCase();
-    if (got) {
-      filled++;
-      const want = (spec.solution[i] || "").toUpperCase();
-      if (got === want) correctFilled++;
-    }
-  }
-  const pct = total ? Math.round((filled / total) * 100) : 0;
-  const allCorrect = (filled === total) && (correctFilled === total);
-  return { total, filled, pct, allCorrect };
-}
-async function writeProgress(key, spec, progress) {
-  const snap = snapshot(spec, progress);
-  await idb.put("progress", { key, updatedAt: Date.now(), progress, snap });
-}
-async function autosave(immediate=false) {
-  if (!current.key || !current.spec || !current.progress) return;
-  if (savePending) clearTimeout(savePending);
-  const delay = immediate ? 0 : 120;
-  savePending = setTimeout(async () => {
-    savePending = null;
-    await writeProgress(current.key, current.spec, current.progress);
-  }, delay);
-}
-
-/* ---------- utils ---------- */
+/* ------------------ utils ------------------ */
 
 function isoDate(d) {
   return new Date(d.getTime() - d.getTimezoneOffset() * 60000).toISOString().slice(0, 10);
