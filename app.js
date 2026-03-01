@@ -221,17 +221,14 @@ function freshProgress(spec) {
 }
 
 function completionPercent(spec, progress) {
-  let total = 0, correct = 0, filled = 0;
+  let total = 0, filled = 0;
   for (let i = 0; i < spec.solution.length; i++) {
     if (spec.isBlack[i]) continue;
     total++;
-    const want = (spec.solution[i] || "").toUpperCase();
     const got = (progress.fills[i] || "").toUpperCase();
     if (got) filled++;
-    if (got && got === want) correct++;
   }
-  // “percent completed” is ambiguous; using “correct-filled / total”.
-  return { total, filled, correct, pct: total ? Math.round((correct / total) * 100) : 0 };
+  return { total, filled, pct: total ? Math.round((filled / total) * 100) : 0 };
 }
 
 async function writePercentSnapshot(key, spec, progress) {
