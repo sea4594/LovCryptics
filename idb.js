@@ -10,7 +10,7 @@ function openDB() {
         db.createObjectStore("puzzles", { keyPath: "key" }); // key = `${psid}|${date}`
       }
       if (!db.objectStoreNames.contains("progress")) {
-        db.createObjectStore("progress", { keyPath: "key" }); // same key
+        db.createObjectStore("progress", { keyPath: "key" }); // key = `${psid}|${date}`
       }
     };
     req.onsuccess = () => resolve(req.result);
