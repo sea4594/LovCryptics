@@ -3,20 +3,23 @@
 <head>
   <meta charset="utf-8" />
   <meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover" />
-  <meta name="theme-color" content="#0f0f10" />
+  <meta name="theme-color" content="#f6f7fb" />
   <link rel="manifest" href="manifest.webmanifest" />
   <link rel="stylesheet" href="styles.css" />
-  <title>Cryptic Cache</title>
+  <title>LovCryptic</title>
 </head>
 <body>
   <!-- HOME VIEW -->
   <main id="homeView" class="view">
     <div class="homeTop">
       <div class="homeTitle">
-        <h1>Cryptic Cache</h1>
+        <h1>LovCryptic</h1>
         <div id="homeStatus" class="muted">Syncing…</div>
       </div>
-      <button id="filterBtn" class="chip" aria-pressed="false">Show incomplete</button>
+      <div class="homeActions">
+        <button id="filterBtn" class="chip" aria-label="Filter">Filter</button>
+        <button id="themeBtn" class="chip" aria-label="Theme">Theme</button>
+      </div>
     </div>
 
     <div id="archive" class="archive"></div>
@@ -25,11 +28,11 @@
   <!-- PUZZLE VIEW -->
   <main id="puzzleView" class="view hidden">
     <div class="topbar">
+      <div class="brandMini">LovCryptic</div>
       <div class="timer" id="timer">00:00</div>
-
       <div class="topbarRight">
-        <button id="hintBtn" class="iconBtn" title="Hints" aria-label="Hints">Hint</button>
-        <button id="menuBtn" class="iconBtn" title="Menu" aria-label="Menu">Menu</button>
+        <button id="hintBtn" class="iconBtn" aria-label="Hints">Hint</button>
+        <button id="menuBtn" class="iconBtn" aria-label="Menu">Menu</button>
       </div>
     </div>
 
@@ -43,23 +46,60 @@
     <input id="kbd" class="kbd" autocomplete="off" autocapitalize="characters" spellcheck="false" />
   </main>
 
-  <!-- Menus -->
+  <!-- Sheets -->
   <div id="hintMenu" class="sheet hidden" role="dialog" aria-modal="true">
     <div class="sheetCard">
+      <div class="sheetTitle">Hints</div>
       <button class="sheetItem" id="revealLetterBtn">Reveal selected letter</button>
       <button class="sheetItem" id="revealWordBtn">Reveal selected word</button>
-      <button class="sheetItem" id="checkWordBtn">Check selected word</button>
-      <button class="sheetItem" id="checkPuzzleBtn">Check entire puzzle</button>
+      <button class="sheetItem" id="checkWordBtn">Check selected word (delete wrong)</button>
+      <button class="sheetItem" id="checkPuzzleBtn">Check entire puzzle (delete wrong)</button>
+      <div class="sheetDivider"></div>
+      <button class="sheetItem" id="toggleChecksBtn" aria-pressed="false">Word checks: Off</button>
       <button class="sheetCancel" data-close="hintMenu">Cancel</button>
     </div>
   </div>
 
   <div id="mainMenu" class="sheet hidden" role="dialog" aria-modal="true">
     <div class="sheetCard">
-      <button class="sheetItem" id="toggleChecksBtn" aria-pressed="false">Word checks: Off</button>
-      <button class="sheetItem" id="saveExitBtn">Save & exit</button>
+      <div class="sheetTitle brandTitle">LovCryptic</div>
+      <button class="sheetItem" id="saveExitBtn">Exit to menu</button>
       <button class="sheetItem danger" id="restartBtn">Restart</button>
       <button class="sheetCancel" data-close="mainMenu">Cancel</button>
+    </div>
+  </div>
+
+  <div id="filterMenu" class="sheet hidden" role="dialog" aria-modal="true">
+    <div class="sheetCard">
+      <div class="sheetTitle">Filter</div>
+      <button class="sheetItem" data-filter="all">All</button>
+      <button class="sheetItem" data-filter="incomplete">Incomplete</button>
+      <button class="sheetItem" data-filter="completed">Completed</button>
+      <button class="sheetItem" data-filter="not_started">Not started</button>
+      <button class="sheetCancel" data-close="filterMenu">Cancel</button>
+    </div>
+  </div>
+
+  <div id="themeMenu" class="sheet hidden" role="dialog" aria-modal="true">
+    <div class="sheetCard">
+      <div class="sheetTitle">Theme</div>
+      <button class="sheetItem" data-theme="light">Classic Light</button>
+      <button class="sheetItem" data-theme="dark">Classic Dark</button>
+      <div class="sheetDivider"></div>
+      <button class="sheetItem" data-theme="sage">Sage</button>
+      <button class="sheetItem" data-theme="lavender">Lavender</button>
+      <button class="sheetItem" data-theme="ocean">Ocean</button>
+      <button class="sheetItem" data-theme="sand">Sand</button>
+      <button class="sheetCancel" data-close="themeMenu">Cancel</button>
+    </div>
+  </div>
+
+  <!-- Congrats overlay -->
+  <div id="congrats" class="sheet hidden" role="dialog" aria-modal="true">
+    <div class="sheetCard">
+      <div class="sheetTitle">🎉 Congratulations</div>
+      <div class="sheetBody" id="congratsBody">Solved in 00:00</div>
+      <button class="sheetItem" id="congratsExitBtn">Exit to menu</button>
     </div>
   </div>
 
