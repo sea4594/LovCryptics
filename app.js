@@ -1,9 +1,5 @@
 import * as idb from "./idb.js";
 
-/**
- * If CORS blocks direct fetches, set API_BASE to your Worker:
- * const API_BASE = "https://YOUR-WORKER.workers.dev/?apiurl=";
- */
 const API_BASE = "";
 const PSID_DEFAULT = "100000160";
 
@@ -62,7 +58,6 @@ init();
 async function init() {
   applySavedTheme();
 
-  // SW
   if ("serviceWorker" in navigator) {
     try { await navigator.serviceWorker.register("./sw.js"); } catch {}
   }
@@ -74,7 +69,6 @@ async function init() {
   menuBtn.addEventListener("click", () => openSheet("mainMenu"));
 
   document.body.addEventListener("click", async (e) => {
-    // close by cancel buttons / clicking backdrop
     const closeId = e.target?.getAttribute?.("data-close");
     if (closeId) closeSheet(closeId);
 
@@ -82,9 +76,8 @@ async function init() {
     if (e.target === mainMenu) closeSheet("mainMenu");
     if (e.target === filterMenu) closeSheet("filterMenu");
     if (e.target === themeMenu) closeSheet("themeMenu");
-    if (e.target === congrats) return; // don't close by backdrop for congrats
+    if (e.target === congrats) return;
 
-    // filter buttons
     const f = e.target?.getAttribute?.("data-filter");
     if (f) {
       filterMode = f;
@@ -92,7 +85,6 @@ async function init() {
       await renderHome();
     }
 
-    // theme buttons
     const t = e.target?.getAttribute?.("data-theme");
     if (t) {
       setTheme(t);
@@ -111,7 +103,7 @@ async function init() {
     toggleChecksBtn.setAttribute("aria-pressed", String(current.progress.wordChecks));
     toggleChecksBtn.textContent = `Word checks: ${current.progress.wordChecks ? "On" : "Off"}`;
     await autosave(true);
-    repaintWordCheck();
+    repaintAllCorrectWords();
   });
 
   saveExitBtn.addEventListener("click", async () => { closeSheet("mainMenu"); await exitPuzzle(); });
@@ -148,10 +140,7 @@ function applySavedTheme() {
 function setTheme(theme, opts = {}) {
   document.body.setAttribute("data-theme", theme);
   localStorage.setItem("lovcrypticTheme", theme);
-  if (!opts.silent) {
-    // keep grid sizing stable
-    if (current.spec) computeCellSize(current.spec.rows, current.spec.cols);
-  }
+  if (!opts.silent && current.spec) computeCellSize(current.spec.rows, current.spec.cols);
 }
 
 /* ---------- home ---------- */
@@ -173,11 +162,13 @@ async function renderHome() {
     const runningSince = pr?.progress?.runningSince || null;
     const timeMs = elapsedMs + (runningSince ? (Date.now() - runningSince) : 0);
 
-    const isNotStarted = timeMs <= 0 && (snap.filled || 0) === 0;
+    const started = (timeMs > 0) || (snap.filled > 0);
+    const isNotStarted = !started;
     const isCompleted = !!pr?.progress?.completed;
 
-    // Filter
-    if (filterMode === "incomplete" && isCompleted) continue;
+    // Filter rules (updated):
+    // - incomplete = started but not completed
+    if (filterMode === "incomplete" && !(started && !isCompleted)) continue;
     if (filterMode === "completed" && !isCompleted) continue;
     if (filterMode === "not_started" && !isNotStarted) continue;
 
@@ -221,10 +212,9 @@ async function renderHome() {
 async function autoSync() {
   const psid = PSID_DEFAULT;
   const puzzles = await idb.getAll("puzzles");
-  let dates = puzzles.filter(p => p.psid === psid).map(p => p.date).sort(); // asc
+  let dates = puzzles.filter(p => p.psid === psid).map(p => p.date).sort();
 
   const today = isoDate(new Date());
-
   const newest = dates.length ? dates[dates.length - 1] : null;
   const oldest = dates.length ? dates[0] : null;
 
@@ -234,7 +224,6 @@ async function autoSync() {
     dates = [today];
   }
 
-  // forward fill (cap)
   const forwardCap = 10;
   let forward = 0;
   let cursor = addDays(newest || today, 1);
@@ -245,7 +234,6 @@ async function autoSync() {
     forward++;
   }
 
-  // backward probe (cap + persistent)
   const state = loadSyncState();
   let backCursor = state.backCursor || addDays(oldest || today, -1);
   let failStreak = state.failStreak || 0;
@@ -314,30 +302,25 @@ async function openPuzzle(psid, date) {
 
   current = { key, psid, date, spec, progress, selected: null };
 
-  // sheets text
   toggleChecksBtn.setAttribute("aria-pressed", String(!!progress.wordChecks));
   toggleChecksBtn.textContent = `Word checks: ${progress.wordChecks ? "On" : "Off"}`;
 
-  // view swap
   homeView.classList.add("hidden");
   puzzleView.classList.remove("hidden");
 
   renderGrid(spec, progress);
   showClue(null);
-
   computeCellSize(spec.rows, spec.cols);
 
   setTimeout(() => kbd.focus(), 50);
   await startTimerIfOpen();
+  repaintAllCorrectWords();
 }
 
 async function exitPuzzle() {
   await stopTimerAndSave();
 
-  current = {
-    key: null, psid: PSID_DEFAULT, date: null,
-    spec: null, progress: null, selected: null
-  };
+  current = { key:null, psid:PSID_DEFAULT, date:null, spec:null, progress:null, selected:null };
 
   puzzleView.classList.add("hidden");
   homeView.classList.remove("hidden");
@@ -359,8 +342,7 @@ async function restartPuzzle() {
 
 async function startTimerIfOpen() {
   if (!current.key || !current.progress) return;
-  if (current.progress.completed) return; // solved, no timer
-
+  if (current.progress.completed) return;
   if (current.progress.runningSince) return;
 
   current.progress.runningSince = Date.now();
@@ -456,13 +438,7 @@ function parsePuzzle(apiJson) {
       cells.push(pos);
       solution[pos] = entry.answer[k];
     }
-    return {
-      id: `${entry.dir}:${entry.idx}`,
-      dir: entry.dir,
-      clue: entry.clue,
-      len: entry.answer.length,
-      cells
-    };
+    return { id: `${entry.dir}:${entry.idx}`, dir: entry.dir, clue: entry.clue, len: entry.answer.length, cells };
   });
 
   const isBlock = solution.map((ch) => ch === null);
@@ -474,7 +450,6 @@ function parsePuzzle(apiJson) {
       else cellToWords[cell].d.push(w.id);
     }
   }
-
   const wordMap = new Map(words.map(w => [w.id, w]));
 
   return { rows, cols, solution, isBlock, words, wordMap, cellToWords };
@@ -491,7 +466,7 @@ function freshProgress(spec) {
   };
 }
 
-/* ---------- snapshot (letters filled) ---------- */
+/* ---------- snapshot ---------- */
 
 function snapshot(spec, progress) {
   let total = 0, filled = 0, correctFilled = 0;
@@ -512,12 +487,7 @@ function snapshot(spec, progress) {
 
 async function writeProgress(key, spec, progress) {
   const snap = snapshot(spec, progress);
-  await idb.put("progress", {
-    key,
-    updatedAt: Date.now(),
-    progress,
-    snap
-  });
+  await idb.put("progress", { key, updatedAt: Date.now(), progress, snap });
 }
 
 /* ---------- autosave ---------- */
@@ -553,7 +523,6 @@ function renderGrid(spec, progress) {
       cell.textContent = (progress.fills[i] || "").toUpperCase();
       cell.addEventListener("click", () => onCellTap(i));
     }
-
     gridEl.appendChild(cell);
   }
 
@@ -563,7 +532,6 @@ function renderGrid(spec, progress) {
 function computeCellSize(rows, cols) {
   const topbarH = 52;
   const clueH = clueBar.classList.contains("hidden") ? 0 : 40;
-
   const vpW = Math.floor(window.innerWidth);
   const vpH = Math.floor(window.innerHeight);
 
@@ -617,12 +585,12 @@ function setSelection(sel) {
   current.selected = sel;
   paintSelection();
   showCurrentClue();
-  repaintWordCheck();
 }
 
 function paintSelection() {
+  // Important: don't clear green correct-words (persistent). Only remove selection blue.
   for (const el of gridEl.children) {
-    el.classList.remove("selected", "word", "wordOk");
+    el.classList.remove("selected", "word");
   }
 
   if (!current.selected) return;
@@ -637,7 +605,7 @@ function paintSelection() {
     if (w) {
       for (const c of w.cells) {
         const el = gridEl.querySelector(`[data-i="${c}"]`);
-        if (el) el.classList.add("word");
+        if (el) el.classList.add("word"); // selected word = blue
       }
     }
   }
@@ -662,39 +630,35 @@ function showClue(text) {
   if (current.spec) computeCellSize(current.spec.rows, current.spec.cols);
 }
 
-/* ---------- Word checks: entire word only, only if fully filled & correct ---------- */
+/* ---------- persistent correct-word highlighting ---------- */
 
-function repaintWordCheck() {
-  // Clear previous ok tint
+function repaintAllCorrectWords() {
+  // Clear all green marks first
   for (const el of gridEl.children) el.classList.remove("wordOk");
 
   if (!current.progress?.wordChecks) return;
-  const w = getSelectedWord();
-  if (!w) return;
 
-  // whole word must be filled
-  for (const c of w.cells) {
-    const got = (current.progress.fills[c] || "").toUpperCase();
-    if (!got) return;
-  }
-  // and correct
-  for (const c of w.cells) {
-    const got = (current.progress.fills[c] || "").toUpperCase();
-    const want = (current.spec.solution[c] || "").toUpperCase();
-    if (got !== want) return;
-  }
-
-  // tint entire word
-  for (const c of w.cells) {
-    const el = gridEl.querySelector(`[data-i="${c}"]`);
-    if (el) el.classList.add("wordOk");
+  for (const w of current.spec.words) {
+    if (isWordFilledAndCorrect(w)) {
+      for (const c of w.cells) {
+        const el = gridEl.querySelector(`[data-i="${c}"]`);
+        if (el) el.classList.add("wordOk"); // persistent green
+      }
+    }
   }
 }
 
-function getSelectedWord() {
-  const id = current.selected?.wordId;
-  if (!id) return null;
-  return current.spec.wordMap.get(id) || null;
+function isWordFilledAndCorrect(w) {
+  for (const c of w.cells) {
+    const got = (current.progress.fills[c] || "").toUpperCase();
+    if (!got) return false;
+  }
+  for (const c of w.cells) {
+    const got = (current.progress.fills[c] || "").toUpperCase();
+    const want = (current.spec.solution[c] || "").toUpperCase();
+    if (got !== want) return false;
+  }
+  return true;
 }
 
 /* ---------- typing rules ---------- */
@@ -704,7 +668,6 @@ async function onKeyDown(e) {
   if (current.progress.completed) return;
 
   const { cellIndex, wordId } = current.selected;
-
   if (current.spec.isBlock[cellIndex]) return;
 
   const key = e.key;
@@ -762,7 +725,8 @@ function setCell(i, v) {
   const el = gridEl.querySelector(`[data-i="${i}"]`);
   if (el) el.textContent = v;
 
-  repaintWordCheck();
+  // Update persistent green words when checks are on
+  if (current.progress.wordChecks) repaintAllCorrectWords();
 }
 
 /* ---------- hint actions ---------- */
@@ -788,7 +752,6 @@ async function hintRevealWord() {
 }
 
 async function hintCheckWord() {
-  // Delete wrong letters only (no filling)
   const w = getSelectedWord();
   if (!w) return;
   for (const c of w.cells) {
@@ -801,7 +764,6 @@ async function hintCheckWord() {
 }
 
 async function hintCheckPuzzle() {
-  // Delete wrong letters everywhere
   for (let i = 0; i < current.spec.solution.length; i++) {
     if (current.spec.isBlock[i]) continue;
     const got = (current.progress.fills[i] || "").toUpperCase();
@@ -810,7 +772,6 @@ async function hintCheckPuzzle() {
     if (got !== want) setCell(i, "");
   }
 
-  // If everything is correct + filled => complete
   const snap = snapshot(current.spec, current.progress);
   if (snap.allCorrect) {
     await completePuzzle();
@@ -820,16 +781,58 @@ async function hintCheckPuzzle() {
   await autosave(true);
 }
 
-async function completePuzzle() {
-  // stop time, mark completed, show overlay
-  await stopTimerAndSave();
+function getSelectedWord() {
+  const id = current.selected?.wordId;
+  if (!id) return null;
+  return current.spec.wordMap.get(id) || null;
+}
 
+async function completePuzzle() {
+  await stopTimerAndSave();
   current.progress.completed = true;
   current.progress.completedAt = Date.now();
   await autosave(true);
 
   congratsBody.textContent = `Solved in ${fmtTime(current.progress.elapsedMs || 0)}`;
   openSheet("congrats");
+}
+
+/* ---------- snapshot ---------- */
+
+function snapshot(spec, progress) {
+  let total = 0, filled = 0, correctFilled = 0;
+  for (let i = 0; i < spec.solution.length; i++) {
+    if (spec.isBlock[i]) continue;
+    total++;
+    const got = (progress.fills[i] || "").toUpperCase();
+    if (got) {
+      filled++;
+      const want = (spec.solution[i] || "").toUpperCase();
+      if (got === want) correctFilled++;
+    }
+  }
+  const pct = total ? Math.round((filled / total) * 100) : 0;
+  const allCorrect = (filled === total) && (correctFilled === total);
+  return { total, filled, pct, allCorrect };
+}
+
+async function writeProgress(key, spec, progress) {
+  const snap = snapshot(spec, progress);
+  await idb.put("progress", { key, updatedAt: Date.now(), progress, snap });
+}
+
+/* ---------- autosave ---------- */
+
+async function autosave(immediate = false) {
+  if (!current.key || !current.spec || !current.progress) return;
+
+  if (savePending) clearTimeout(savePending);
+  const delay = immediate ? 0 : 120;
+
+  savePending = setTimeout(async () => {
+    savePending = null;
+    await writeProgress(current.key, current.spec, current.progress);
+  }, delay);
 }
 
 /* ---------- sequencing ---------- */
