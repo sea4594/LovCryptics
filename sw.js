@@ -1,5 +1,12 @@
-const CACHE = "cryptic-cache-v1";
-const ASSETS = ["./", "./index.html", "./styles.css", "./app.js", "./idb.js", "./manifest.webmanifest"];
+const CACHE = "cryptic-cache-v2";
+const ASSETS = [
+  "./",
+  "./index.html",
+  "./styles.css",
+  "./app.js",
+  "./idb.js",
+  "./manifest.webmanifest"
+];
 
 self.addEventListener("install", (e) => {
   e.waitUntil(caches.open(CACHE).then((c) => c.addAll(ASSETS)));
