@@ -1,232 +1,362 @@
-:root {
-  color-scheme: light dark;
-  --bg: #0f0f10;
-  --panel: rgba(127,127,127,.10);
-  --line: rgba(127,127,127,.22);
-  --muted: rgba(255,255,255,.65);
-  --block: rgba(160,160,160,.38); /* darker than before, not black */
-  --sel: rgba(0, 140, 255, .85);
-  --word: rgba(0, 140, 255, .22);
-  --good: rgba(0, 180, 0, .35);
-  --bad: rgba(255, 0, 0, .35);
+:root{
+  /* Default: LIGHT */
+  color-scheme: light;
+  --bg:#f6f7fb;
+  --panel:#ffffff;
+  --line:rgba(20,20,40,.14);
+  --text:rgba(15,15,25,.96);
+  --muted:rgba(15,15,25,.62);
+
+  /* Grid */
+  --cell-bg:rgba(255,255,255,.92);
+  --cell-text:rgba(15,15,25,.95);
+  --block-bg:rgba(0,0,0,.18);   /* darker than cell boxes, not black */
+  --grid-line:rgba(20,20,40,.18);
+
+  /* Accents */
+  --sel:rgba(0,120,255,.92);
+  --word:rgba(0,120,255,.14);
+  --word-ok:rgba(0,160,90,.18);
+
+  /* Sheets */
+  --sheet-dim:rgba(0,0,0,.22);
+  --sheet-bg:rgba(255,255,255,.98);
 }
 
-* { box-sizing: border-box; }
-html, body { height: 100%; }
-body {
-  margin: 0;
-  background: var(--bg);
-  font-family: system-ui, -apple-system, Segoe UI, Roboto, Helvetica, Arial, sans-serif;
-  overflow: hidden; /* never scroll whole page */
+body[data-theme="dark"]{
+  color-scheme: dark;
+  --bg:#0f0f12;
+  --panel:rgba(255,255,255,.06);
+  --line:rgba(255,255,255,.16);
+  --text:rgba(255,255,255,.94);
+  --muted:rgba(255,255,255,.66);
+
+  --cell-bg:rgba(255,255,255,.08);
+  --cell-text:rgba(255,255,255,.95);
+  --block-bg:rgba(255,255,255,.26);
+  --grid-line:rgba(255,255,255,.18);
+
+  --sel:rgba(120,180,255,.95);
+  --word:rgba(120,180,255,.20);
+  --word-ok:rgba(70,210,140,.22);
+
+  --sheet-dim:rgba(0,0,0,.42);
+  --sheet-bg:rgba(18,18,22,.98);
 }
 
-.view {
-  height: 100vh;
-  height: 100dvh;
-  padding: 14px;
-  padding-bottom: calc(14px + env(safe-area-inset-bottom));
-  padding-top: calc(14px + env(safe-area-inset-top));
-  overflow: hidden; /* prevent scrolling */
+body[data-theme="sage"]{
+  color-scheme: light;
+  --bg:#f3f7f4;
+  --panel:#ffffff;
+  --line:rgba(20,40,30,.14);
+  --text:rgba(10,20,15,.96);
+  --muted:rgba(10,20,15,.60);
+
+  --cell-bg:rgba(255,255,255,.92);
+  --cell-text:rgba(10,20,15,.95);
+  --block-bg:rgba(10,20,15,.20);
+  --grid-line:rgba(20,40,30,.18);
+
+  --sel:rgba(20,140,90,.95);
+  --word:rgba(20,140,90,.16);
+  --word-ok:rgba(20,140,90,.22);
+
+  --sheet-dim:rgba(0,0,0,.20);
+  --sheet-bg:rgba(255,255,255,.98);
 }
 
-.hidden { display: none !important; }
-.muted { color: var(--muted); font-size: 13px; }
+body[data-theme="lavender"]{
+  color-scheme: light;
+  --bg:#f6f4fb;
+  --panel:#ffffff;
+  --line:rgba(40,20,60,.14);
+  --text:rgba(25,15,40,.96);
+  --muted:rgba(25,15,40,.60);
 
-h1 {
-  margin: 0;
-  font-size: 20px;
-  letter-spacing: .2px;
+  --cell-bg:rgba(255,255,255,.92);
+  --cell-text:rgba(25,15,40,.95);
+  --block-bg:rgba(25,15,40,.18);
+  --grid-line:rgba(40,20,60,.18);
+
+  --sel:rgba(120,80,220,.92);
+  --word:rgba(120,80,220,.14);
+  --word-ok:rgba(0,160,90,.18);
+
+  --sheet-dim:rgba(0,0,0,.20);
+  --sheet-bg:rgba(255,255,255,.98);
 }
 
-.homeTop {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  gap: 12px;
-  margin-bottom: 10px;
+body[data-theme="ocean"]{
+  color-scheme: light;
+  --bg:#f2f7fb;
+  --panel:#ffffff;
+  --line:rgba(10,40,70,.14);
+  --text:rgba(10,25,45,.96);
+  --muted:rgba(10,25,45,.60);
+
+  --cell-bg:rgba(255,255,255,.92);
+  --cell-text:rgba(10,25,45,.95);
+  --block-bg:rgba(10,25,45,.18);
+  --grid-line:rgba(10,40,70,.18);
+
+  --sel:rgba(0,120,180,.92);
+  --word:rgba(0,120,180,.14);
+  --word-ok:rgba(0,160,90,.18);
+
+  --sheet-dim:rgba(0,0,0,.20);
+  --sheet-bg:rgba(255,255,255,.98);
 }
 
-.homeTitle { display: grid; gap: 4px; }
+body[data-theme="sand"]{
+  color-scheme: light;
+  --bg:#fbf7ef;
+  --panel:#ffffff;
+  --line:rgba(70,50,20,.14);
+  --text:rgba(35,25,10,.96);
+  --muted:rgba(35,25,10,.60);
 
-.chip {
-  border: 1px solid var(--line);
-  background: transparent;
-  padding: 10px 12px;
-  border-radius: 999px;
+  --cell-bg:rgba(255,255,255,.92);
+  --cell-text:rgba(35,25,10,.95);
+  --block-bg:rgba(35,25,10,.20);
+  --grid-line:rgba(70,50,20,.18);
+
+  --sel:rgba(200,120,40,.92);
+  --word:rgba(200,120,40,.14);
+  --word-ok:rgba(0,160,90,.18);
+
+  --sheet-dim:rgba(0,0,0,.20);
+  --sheet-bg:rgba(255,255,255,.98);
 }
 
-.archive {
-  height: calc(100% - 56px);
-  overflow: auto; /* home list scrolls if long */
-  display: grid;
-  gap: 10px;
-  padding-right: 4px;
+*{box-sizing:border-box;}
+html,body{height:100%;}
+body{
+  margin:0;
+  background:var(--bg);
+  color:var(--text);
+  font-family:system-ui,-apple-system,Segoe UI,Roboto,Helvetica,Arial,sans-serif;
+  overflow:hidden;
 }
 
-.card {
-  border: 1px solid var(--line);
-  background: var(--panel);
-  border-radius: 14px;
-  padding: 12px;
-  display: grid;
-  grid-template-columns: 1fr auto;
-  gap: 10px;
-  align-items: center;
+.view{
+  height:100vh;
+  height:100dvh;
+  padding:14px;
+  padding-bottom:calc(14px + env(safe-area-inset-bottom));
+  padding-top:calc(14px + env(safe-area-inset-top));
+  overflow:hidden;
 }
 
-.card small { color: var(--muted); }
-.pct { font-variant-numeric: tabular-nums; }
-.openBtn {
-  border: 1px solid var(--line);
-  background: transparent;
-  padding: 10px 12px;
-  border-radius: 12px;
+.hidden{display:none!important;}
+.muted{color:var(--muted);font-size:13px;}
+
+h1{margin:0;font-size:20px;letter-spacing:.2px;}
+
+.homeTop{
+  display:flex;align-items:center;justify-content:space-between;gap:12px;margin-bottom:10px;
+}
+.homeTitle{display:grid;gap:4px;}
+.homeActions{display:flex;gap:10px;align-items:center;}
+
+.chip{
+  border:1px solid var(--line);
+  background:var(--panel);
+  color:var(--text);
+  padding:10px 12px;
+  border-radius:999px;
 }
 
-/* Puzzle layout: fixed top bar + grid below. No scrolling. */
-#puzzleView {
-  padding: 0;
-  padding-top: env(safe-area-inset-top);
-  padding-bottom: env(safe-area-inset-bottom);
+.archive{
+  height:calc(100% - 56px);
+  overflow:auto;
+  display:grid;
+  gap:10px;
+  padding-right:4px;
 }
 
-.topbar {
-  height: 52px;
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  padding: 0 12px;
-  border-bottom: 1px solid var(--line);
-  background: rgba(15,15,16,.92);
-  backdrop-filter: blur(10px);
+.card{
+  border:1px solid var(--line);
+  background:var(--panel);
+  border-radius:14px;
+  padding:12px;
+  display:grid;
+  grid-template-columns:1fr auto;
+  gap:10px;
+  align-items:center;
 }
 
-.timer {
-  font-variant-numeric: tabular-nums;
-  font-weight: 700;
-  letter-spacing: .5px;
+.card small{color:var(--muted);}
+.pct{font-variant-numeric:tabular-nums;}
+.openBtn{
+  border:1px solid var(--line);
+  background:transparent;
+  color:var(--text);
+  padding:10px 12px;
+  border-radius:12px;
 }
 
-.topbarRight {
-  display: flex;
-  gap: 10px;
-  align-items: center;
+/* Puzzle view */
+#puzzleView{
+  padding:0;
+  padding-top:env(safe-area-inset-top);
+  padding-bottom:env(safe-area-inset-bottom);
 }
 
-.iconBtn {
-  border: 1px solid var(--line);
-  background: transparent;
-  padding: 9px 12px;
-  border-radius: 12px;
+.topbar{
+  height:52px;
+  display:grid;
+  grid-template-columns:auto 1fr auto;
+  align-items:center;
+  gap:10px;
+  padding:0 12px;
+  border-bottom:1px solid var(--line);
+  background:var(--panel);
 }
 
-.clueBar {
-  min-height: 40px;
-  padding: 8px 12px;
-  border-bottom: 1px solid var(--line);
-  color: rgba(255,255,255,.92);
-  font-size: 14px;
-  display: flex;
-  align-items: center;
-  background: rgba(15,15,16,.88);
-  backdrop-filter: blur(10px);
-  user-select: none;
+.brandMini{
+  font-weight:800;
+  letter-spacing:.6px;
+  opacity:.9;
 }
 
-.gridShell {
-  height: calc(100dvh - env(safe-area-inset-top) - env(safe-area-inset-bottom) - 52px - 40px);
-  /* clueBar can be hidden; JS will adjust cell size anyway */
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  padding: 8px;
+.timer{
+  justify-self:center;
+  font-variant-numeric:tabular-nums;
+  font-weight:800;
+  letter-spacing:.6px;
 }
 
-.grid {
-  display: grid;
-  gap: 1px;                 /* thin line between cells */
-  background: var(--line);  /* the “line” color shows through gaps */
-  border-radius: 10px;
-  padding: 1px;             /* outer line */
-  touch-action: manipulation;
-  user-select: none;
+.topbarRight{display:flex;gap:10px;align-items:center;}
+
+.iconBtn{
+  border:1px solid var(--line);
+  background:transparent;
+  color:var(--text);
+  padding:9px 12px;
+  border-radius:12px;
 }
 
-.cell {
-  display: grid;
-  place-items: center;
-  width: var(--cell);
-  height: var(--cell);
-  background: rgba(255,255,255,.05);
-  color: rgba(255,255,255,.96);
-  font-weight: 800;
-  font-size: calc(var(--cell) * 0.58);
-  text-transform: uppercase;
-  border-radius: 0;         /* clean grid */
+.clueBar{
+  min-height:40px;
+  padding:8px 12px;
+  border-bottom:1px solid var(--line);
+  color:var(--text);
+  font-size:14px;
+  display:flex;
+  align-items:center;
+  background:var(--panel);
+  user-select:none;
 }
 
-.cell.block {
-  background: var(--block);
-  color: transparent;
+/* Put grid at top (not vertically centered) to avoid keyboard-induced scroll */
+.gridShell{
+  height:calc(100dvh - env(safe-area-inset-top) - env(safe-area-inset-bottom) - 52px - 40px);
+  display:flex;
+  align-items:flex-start;
+  justify-content:center;
+  padding:8px;
+  overflow:hidden;
 }
 
-.cell.word {
-  background: var(--word);
+.grid{
+  display:grid;
+  gap:1px;
+  background:var(--grid-line);
+  border-radius:10px;
+  padding:1px;
+  touch-action:manipulation;
+  user-select:none;
 }
 
-.cell.selected {
-  outline: 2px solid var(--sel);
-  outline-offset: -2px;
-  z-index: 2;
+.cell{
+  display:grid;
+  place-items:center;
+  width:var(--cell);
+  height:var(--cell);
+  background:var(--cell-bg);
+  color:var(--cell-text);
+  font-weight:900;
+  font-size:calc(var(--cell) * 0.58);
+  text-transform:uppercase;
+  border-radius:0;
 }
 
-.cell.good { background: var(--good); }
-.cell.bad  { background: var(--bad); }
+.cell.block{
+  background:var(--block-bg);
+  color:transparent;
+}
+
+.cell.word{ background:var(--word); }
+.cell.wordOk{ background:var(--word-ok); }
+
+.cell.selected{
+  outline:2px solid var(--sel);
+  outline-offset:-2px;
+  z-index:2;
+}
 
 /* Invisible keyboard input */
-.kbd {
-  position: absolute;
-  left: -9999px;
-  top: -9999px;
-  width: 1px;
-  height: 1px;
-  opacity: 0;
+.kbd{
+  position:absolute;left:-9999px;top:-9999px;width:1px;height:1px;opacity:0;
 }
 
-/* Bottom-sheet menus */
-.sheet {
-  position: absolute;
-  inset: 0;
-  background: rgba(0,0,0,.40);
-  display: grid;
-  place-items: end center;
-  padding: 12px;
-  padding-bottom: calc(12px + env(safe-area-inset-bottom));
+/* Sheets */
+.sheet{
+  position:absolute;
+  inset:0;
+  background:var(--sheet-dim);
+  display:grid;
+  place-items:end center;
+  padding:12px;
+  padding-bottom:calc(12px + env(safe-area-inset-bottom));
 }
 
-.sheetCard {
-  width: min(520px, 100%);
-  border-radius: 16px;
-  border: 1px solid var(--line);
-  background: rgba(20,20,22,.96);
-  overflow: hidden;
+.sheetCard{
+  width:min(520px,100%);
+  border-radius:16px;
+  border:1px solid var(--line);
+  background:var(--sheet-bg);
+  overflow:hidden;
+  color:var(--text);
 }
 
-.sheetItem, .sheetCancel {
-  width: 100%;
-  text-align: left;
-  padding: 14px 14px;
-  border: 0;
-  background: transparent;
-  color: rgba(255,255,255,.95);
-  border-bottom: 1px solid rgba(127,127,127,.18);
-  font-size: 15px;
+.sheetTitle{
+  padding:14px 14px 10px;
+  font-weight:850;
+  letter-spacing:.2px;
 }
 
-.sheetCancel {
-  border-bottom: 0;
-  text-align: center;
-  color: var(--muted);
+.brandTitle{
+  font-weight:950;
+  letter-spacing:1.2px;
+  text-transform:uppercase;
+  background:linear-gradient(90deg, rgba(0,120,255,.22), rgba(0,160,90,.18));
 }
 
-.sheetItem.danger { color: rgba(255,120,120,.95); }
+.sheetBody{
+  padding:0 14px 12px;
+  color:var(--muted);
+}
+
+.sheetDivider{
+  height:1px;
+  background:var(--line);
+}
+
+.sheetItem,.sheetCancel{
+  width:100%;
+  text-align:left;
+  padding:14px 14px;
+  border:0;
+  background:transparent;
+  color:var(--text);
+  border-top:1px solid rgba(127,127,127,.14);
+  font-size:15px;
+}
+
+.sheetCancel{
+  text-align:center;
+  color:var(--muted);
+}
+
+.sheetItem.danger{ color:rgba(200,40,40,.92); }
