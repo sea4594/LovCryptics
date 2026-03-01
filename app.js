@@ -1,11 +1,10 @@
 import * as idb from "./idb.js";
 
 /**
- * If direct fetch is blocked by CORS, set API_BASE to your Cloudflare Worker URL:
+ * If CORS blocks direct fetches, set API_BASE to your Worker:
  * const API_BASE = "https://YOUR-WORKER.workers.dev/?apiurl=";
  */
-const API_BASE = ""; // "" = direct
-
+const API_BASE = "";
 const PSID_DEFAULT = "100000160";
 
 const $ = (s) => document.querySelector(s);
@@ -15,7 +14,9 @@ const puzzleView = $("#puzzleView");
 
 const archiveEl = $("#archive");
 const homeStatusEl = $("#homeStatus");
+
 const filterBtn = $("#filterBtn");
+const themeBtn = $("#themeBtn");
 
 const gridEl = $("#grid");
 const clueBar = $("#clueBar");
@@ -24,56 +25,79 @@ const kbd = $("#kbd");
 
 const hintBtn = $("#hintBtn");
 const menuBtn = $("#menuBtn");
+
 const hintMenu = $("#hintMenu");
 const mainMenu = $("#mainMenu");
+const filterMenu = $("#filterMenu");
+const themeMenu = $("#themeMenu");
+const congrats = $("#congrats");
+const congratsBody = $("#congratsBody");
+const congratsExitBtn = $("#congratsExitBtn");
 
 const revealLetterBtn = $("#revealLetterBtn");
 const revealWordBtn = $("#revealWordBtn");
 const checkWordBtn = $("#checkWordBtn");
 const checkPuzzleBtn = $("#checkPuzzleBtn");
-
 const toggleChecksBtn = $("#toggleChecksBtn");
+
 const saveExitBtn = $("#saveExitBtn");
 const restartBtn = $("#restartBtn");
 
-let showIncompleteOnly = false;
+let filterMode = "all"; // all | incomplete | completed | not_started
 
 let current = {
   key: null,
   psid: PSID_DEFAULT,
   date: null,
-  spec: null,         // {rows, cols, title, solution[], isBlock[], words[] ...}
-  progress: null,     // { fills[], elapsedMs, runningSince?, checksOn }
-  selected: null      // { cellIndex, wordId, dir }
+  spec: null,
+  progress: null,
+  selected: null
 };
 
 let timerTick = null;
-
-/* ---------- boot ---------- */
+let savePending = null;
 
 init();
 
 async function init() {
+  applySavedTheme();
+
   // SW
   if ("serviceWorker" in navigator) {
     try { await navigator.serviceWorker.register("./sw.js"); } catch {}
   }
 
-  filterBtn.addEventListener("click", async () => {
-    showIncompleteOnly = !showIncompleteOnly;
-    filterBtn.setAttribute("aria-pressed", String(showIncompleteOnly));
-    filterBtn.textContent = showIncompleteOnly ? "Showing incomplete" : "Show incomplete";
-    await renderHome();
-  });
+  filterBtn.addEventListener("click", () => openSheet("filterMenu"));
+  themeBtn.addEventListener("click", () => openSheet("themeMenu"));
 
   hintBtn.addEventListener("click", () => openSheet("hintMenu"));
   menuBtn.addEventListener("click", () => openSheet("mainMenu"));
 
-  document.body.addEventListener("click", (e) => {
+  document.body.addEventListener("click", async (e) => {
+    // close by cancel buttons / clicking backdrop
     const closeId = e.target?.getAttribute?.("data-close");
     if (closeId) closeSheet(closeId);
+
     if (e.target === hintMenu) closeSheet("hintMenu");
     if (e.target === mainMenu) closeSheet("mainMenu");
+    if (e.target === filterMenu) closeSheet("filterMenu");
+    if (e.target === themeMenu) closeSheet("themeMenu");
+    if (e.target === congrats) return; // don't close by backdrop for congrats
+
+    // filter buttons
+    const f = e.target?.getAttribute?.("data-filter");
+    if (f) {
+      filterMode = f;
+      closeSheet("filterMenu");
+      await renderHome();
+    }
+
+    // theme buttons
+    const t = e.target?.getAttribute?.("data-theme");
+    if (t) {
+      setTheme(t);
+      closeSheet("themeMenu");
+    }
   });
 
   revealLetterBtn.addEventListener("click", async () => { closeSheet("hintMenu"); await hintRevealLetter(); });
@@ -83,24 +107,27 @@ async function init() {
 
   toggleChecksBtn.addEventListener("click", async () => {
     if (!current.progress) return;
-    current.progress.checksOn = !current.progress.checksOn;
-    toggleChecksBtn.setAttribute("aria-pressed", String(current.progress.checksOn));
-    toggleChecksBtn.textContent = `Word checks: ${current.progress.checksOn ? "On" : "Off"}`;
-    await autosave();
-    repaintChecks();
+    current.progress.wordChecks = !current.progress.wordChecks;
+    toggleChecksBtn.setAttribute("aria-pressed", String(current.progress.wordChecks));
+    toggleChecksBtn.textContent = `Word checks: ${current.progress.wordChecks ? "On" : "Off"}`;
+    await autosave(true);
+    repaintWordCheck();
   });
 
   saveExitBtn.addEventListener("click", async () => { closeSheet("mainMenu"); await exitPuzzle(); });
   restartBtn.addEventListener("click", async () => { closeSheet("mainMenu"); await restartPuzzle(); });
 
-  // Keyboard handling
+  congratsExitBtn.addEventListener("click", async () => {
+    closeSheet("congrats");
+    await exitPuzzle();
+  });
+
   kbd.addEventListener("keydown", onKeyDown);
 
-  // Stop timer when app hides; resume accurately.
   document.addEventListener("visibilitychange", async () => {
     if (!current.key) return;
     if (document.hidden) await stopTimerAndSave();
-    else await startTimerIfPuzzleOpen();
+    else await startTimerIfOpen();
   });
 
   window.addEventListener("resize", () => {
@@ -108,9 +135,23 @@ async function init() {
   });
 
   await renderHome();
-  // Efficient incremental sync (newer first, then older probing).
   await autoSync();
   await renderHome();
+}
+
+/* ---------- theme ---------- */
+
+function applySavedTheme() {
+  const t = localStorage.getItem("lovcrypticTheme") || "light";
+  setTheme(t, { silent: true });
+}
+function setTheme(theme, opts = {}) {
+  document.body.setAttribute("data-theme", theme);
+  localStorage.setItem("lovcrypticTheme", theme);
+  if (!opts.silent) {
+    // keep grid sizing stable
+    if (current.spec) computeCellSize(current.spec.rows, current.spec.cols);
+  }
 }
 
 /* ---------- home ---------- */
@@ -121,29 +162,38 @@ async function renderHome() {
   const progMap = new Map(progress.map((p) => [p.key, p]));
 
   puzzles.sort((a, b) => (a.date < b.date ? 1 : -1));
-
   archiveEl.innerHTML = "";
+
   let shown = 0;
 
   for (const p of puzzles) {
     const pr = progMap.get(p.key);
-    const snap = pr?.snap || null;
-    const pct = snap?.pct ?? 0;
-    const filled = snap?.filled ?? 0;
-    const total = snap?.total ?? 0;
+    const snap = pr?.snap || { total: 0, filled: 0, pct: 0, allCorrect: false };
+    const elapsedMs = pr?.progress?.elapsedMs || 0;
+    const runningSince = pr?.progress?.runningSince || null;
+    const timeMs = elapsedMs + (runningSince ? (Date.now() - runningSince) : 0);
 
-    if (showIncompleteOnly && total > 0 && filled >= total) continue;
+    const isNotStarted = timeMs <= 0 && (snap.filled || 0) === 0;
+    const isCompleted = !!pr?.progress?.completed;
+
+    // Filter
+    if (filterMode === "incomplete" && isCompleted) continue;
+    if (filterMode === "completed" && !isCompleted) continue;
+    if (filterMode === "not_started" && !isNotStarted) continue;
 
     const card = document.createElement("div");
     card.className = "card";
 
     const left = document.createElement("div");
+    const status = isCompleted ? "Completed" : (isNotStarted ? "Not started" : "In progress");
+    const timeLabel = isNotStarted ? "Not started" : fmtTime(timeMs);
+
     left.innerHTML =
       `<div><b>${escapeHtml(p.date)}</b></div>
-       <small>${filled}/${total} filled</small>`;
+       <small>${status} • ${timeLabel}</small>`;
 
     const right = document.createElement("div");
-    right.innerHTML = `<div class="pct"><b>${pct}%</b></div>`;
+    right.innerHTML = `<div class="pct"><b>${snap.pct ?? 0}%</b></div>`;
 
     const btn = document.createElement("button");
     btn.className = "openBtn";
@@ -162,71 +212,54 @@ async function renderHome() {
   if (!puzzles.length) {
     archiveEl.innerHTML = `<div class="muted">No cached puzzles yet. Sync will populate automatically.</div>`;
   } else if (!shown) {
-    archiveEl.innerHTML = `<div class="muted">No puzzles match the current filter.</div>`;
+    archiveEl.innerHTML = `<div class="muted">No puzzles match this filter.</div>`;
   }
 }
 
-/* ---------- sync (efficient probing) ---------- */
+/* ---------- sync ---------- */
 
-/**
- * Strategy:
- * 1) Fetch forward from newest cached date → today (bounded per session).
- * 2) Probe backward from oldest cached date to discover older puzzles:
- *    - Keep a persistent "probe cursor" and "fail streak" in localStorage.
- *    - Stop after bounded requests each session.
- */
 async function autoSync() {
   const psid = PSID_DEFAULT;
   const puzzles = await idb.getAll("puzzles");
-  let dates = puzzles.filter(p => p.psid === psid).map(p => p.date);
-  dates.sort(); // ascending ISO
+  let dates = puzzles.filter(p => p.psid === psid).map(p => p.date).sort(); // asc
 
   const today = isoDate(new Date());
 
   const newest = dates.length ? dates[dates.length - 1] : null;
   const oldest = dates.length ? dates[0] : null;
 
-  // If empty, seed with today first (quick win).
   if (!newest) {
     homeStatusEl.textContent = "Fetching today…";
     await tryCache(psid, today);
-    homeStatusEl.textContent = "Syncing…";
     dates = [today];
   }
 
-  // 1) Forward fill: newest+1 .. today (cap)
+  // forward fill (cap)
   const forwardCap = 10;
-  let forwardCount = 0;
+  let forward = 0;
   let cursor = addDays(newest || today, 1);
-
-  while (cursor <= today && forwardCount < forwardCap) {
+  while (cursor <= today && forward < forwardCap) {
     homeStatusEl.textContent = `Fetching ${cursor}…`;
-    const ok = await tryCache(psid, cursor);
-    // even if not ok (no puzzle), still move forward
+    await tryCache(psid, cursor);
     cursor = addDays(cursor, 1);
-    forwardCount++;
+    forward++;
   }
 
-  // 2) Backward probing (cap)
+  // backward probe (cap + persistent)
   const state = loadSyncState();
   let backCursor = state.backCursor || addDays(oldest || today, -1);
   let failStreak = state.failStreak || 0;
 
   const backwardCap = 10;
-  let backwardCount = 0;
+  let back = 0;
 
-  while (backwardCount < backwardCap) {
-    // Hard stop: if we've had many consecutive misses, assume no more historical content.
+  while (back < backwardCap) {
     if (failStreak >= 21) break;
-
     homeStatusEl.textContent = `Probing ${backCursor}…`;
     const ok = await tryCache(psid, backCursor);
-
-    if (ok) failStreak = 0;
-    else failStreak++;
-
+    failStreak = ok ? 0 : (failStreak + 1);
     backCursor = addDays(backCursor, -1);
-    backwardCount++;
+    back++;
   }
 
   saveSyncState({ backCursor, failStreak });
@@ -234,11 +267,11 @@ async function autoSync() {
 }
 
 function loadSyncState() {
-  try { return JSON.parse(localStorage.getItem("crypticSyncState") || "{}"); }
+  try { return JSON.parse(localStorage.getItem("lovcrypticSyncState") || "{}"); }
   catch { return {}; }
 }
 function saveSyncState(s) {
-  localStorage.setItem("crypticSyncState", JSON.stringify(s));
+  localStorage.setItem("lovcrypticSyncState", JSON.stringify(s));
 }
 
 async function tryCache(psid, date) {
@@ -249,13 +282,10 @@ async function tryCache(psid, date) {
   try {
     const url = `https://data.puzzlexperts.com/puzzleapp-v3/data.php?psid=${encodeURIComponent(psid)}&date=${encodeURIComponent(date)}`;
     const data = await fetchJson(url);
-    // Some “no puzzle” responses are still JSON; reject if missing expected fields.
     if (!data?.cells?.[0]?.meta?.data) return false;
 
-    const rec = { key, psid, date, fetchedAt: Date.now(), data };
-    await idb.put("puzzles", rec);
+    await idb.put("puzzles", { key, psid, date, fetchedAt: Date.now(), data });
 
-    // Initialize progress/snapshot
     const spec = parsePuzzle(data);
     const progress = freshProgress(spec);
     await writeProgress(key, spec, progress);
@@ -270,48 +300,44 @@ async function tryCache(psid, date) {
 async function openPuzzle(psid, date) {
   const key = `${psid}|${date}`;
 
-  const puzzleRec = await idb.get("puzzles", key);
+  let puzzleRec = await idb.get("puzzles", key);
   if (!puzzleRec) {
-    // On-demand fetch if user opened a not-yet-cached date (rare if sync is running)
     homeStatusEl.textContent = `Fetching ${date}…`;
     const ok = await tryCache(psid, date);
     if (!ok) return;
+    puzzleRec = await idb.get("puzzles", key);
   }
 
-  const finalRec = await idb.get("puzzles", key);
-  const spec = parsePuzzle(finalRec.data);
-
+  const spec = parsePuzzle(puzzleRec.data);
   const saved = await idb.get("progress", key);
   const progress = saved?.progress || freshProgress(spec);
 
-  current = {
-    key, psid, date, spec,
-    progress,
-    selected: null
-  };
+  current = { key, psid, date, spec, progress, selected: null };
 
-  // UI: switch view
+  // sheets text
+  toggleChecksBtn.setAttribute("aria-pressed", String(!!progress.wordChecks));
+  toggleChecksBtn.textContent = `Word checks: ${progress.wordChecks ? "On" : "Off"}`;
+
+  // view swap
   homeView.classList.add("hidden");
   puzzleView.classList.remove("hidden");
 
-  // Configure menu text
-  toggleChecksBtn.setAttribute("aria-pressed", String(!!progress.checksOn));
-  toggleChecksBtn.textContent = `Word checks: ${progress.checksOn ? "On" : "Off"}`;
-
-  // Render
   renderGrid(spec, progress);
-  computeCellSize(spec.rows, spec.cols);
   showClue(null);
 
-  // Focus keyboard
-  setTimeout(() => kbd.focus(), 50);
+  computeCellSize(spec.rows, spec.cols);
 
-  await startTimerIfPuzzleOpen();
+  setTimeout(() => kbd.focus(), 50);
+  await startTimerIfOpen();
 }
 
 async function exitPuzzle() {
   await stopTimerAndSave();
-  current = { key: null, psid: PSID_DEFAULT, date: null, spec: null, progress: null, selected: null };
+
+  current = {
+    key: null, psid: PSID_DEFAULT, date: null,
+    spec: null, progress: null, selected: null
+  };
 
   puzzleView.classList.add("hidden");
   homeView.classList.remove("hidden");
@@ -324,28 +350,28 @@ async function restartPuzzle() {
   current.progress = freshProgress(current.spec);
   current.selected = null;
   renderGrid(current.spec, current.progress);
-  computeCellSize(current.spec.rows, current.spec.cols);
   showClue(null);
-  await autosave();
+  computeCellSize(current.spec.rows, current.spec.cols);
+  await autosave(true);
 }
 
 /* ---------- timer ---------- */
 
-async function startTimerIfPuzzleOpen() {
+async function startTimerIfOpen() {
   if (!current.key || !current.progress) return;
+  if (current.progress.completed) return; // solved, no timer
 
-  // Avoid double-start
   if (current.progress.runningSince) return;
 
   current.progress.runningSince = Date.now();
-  // tick UI
+
   if (timerTick) clearInterval(timerTick);
   timerTick = setInterval(() => {
     timerEl.textContent = fmtTime(getElapsedMs(current.progress));
   }, 250);
 
   timerEl.textContent = fmtTime(getElapsedMs(current.progress));
-  await autosave(); // persist runningSince
+  await autosave(true);
 }
 
 async function stopTimerAndSave() {
@@ -358,8 +384,9 @@ async function stopTimerAndSave() {
     current.progress.elapsedMs = (current.progress.elapsedMs || 0) + (now - current.progress.runningSince);
     current.progress.runningSince = null;
   }
+
   timerEl.textContent = fmtTime(getElapsedMs(current.progress));
-  await autosave();
+  await autosave(true);
 }
 
 function getElapsedMs(progress) {
@@ -375,19 +402,27 @@ function fmtTime(ms) {
   return `${mm}:${ss}`;
 }
 
-/* ---------- parsing ---------- */
+/* ---------- fetch ---------- */
+
+async function fetchJson(url) {
+  const fetchUrl = API_BASE ? `${API_BASE}${encodeURIComponent(url)}` : url;
+  const resp = await fetch(fetchUrl, { cache: "no-store" });
+  if (!resp.ok) throw new Error(`HTTP ${resp.status}`);
+  const txt = await resp.text();
+  try { return JSON.parse(txt); }
+  catch { throw new Error("Non-JSON response (CORS/proxy issue?)."); }
+}
+
+/* ---------- parse ---------- */
 
 function parsePuzzle(apiJson) {
   const metaData = apiJson?.cells?.[0]?.meta?.data;
-  if (!metaData) throw new Error("Unexpected JSON format: missing meta.data");
+  if (!metaData) throw new Error("Unexpected JSON: missing meta.data");
 
   const params = new URLSearchParams(metaData.startsWith("&") ? metaData.slice(1) : metaData);
   const rows = parseInt(params.get("num_rows") || "15", 10);
   const cols = parseInt(params.get("num_columns") || "15", 10);
 
-  const title = params.get("title") || "Puzzle";
-
-  // Collect word entries
   const wordsRaw = [];
   for (let i = 0; ; i++) {
     const w = params.get(`word${i}`);
@@ -402,16 +437,13 @@ function parsePuzzle(apiJson) {
       idx: i,
       answer: w,
       clue: clue || "",
-      dir, // "a" or "d"
+      dir,
       r: parseInt(r, 10),
       c: parseInt(c, 10)
     });
   }
 
-  // Build solution grid
   const solution = Array.from({ length: rows * cols }, () => null);
-
-  // Build word objects with cell lists
   const words = wordsRaw.map((entry) => {
     const dr = entry.dir === "d" ? 1 : 0;
     const dc = entry.dir === "a" ? 1 : 0;
@@ -435,7 +467,6 @@ function parsePuzzle(apiJson) {
 
   const isBlock = solution.map((ch) => ch === null);
 
-  // Map each cell -> available wordIds by direction
   const cellToWords = Array.from({ length: rows * cols }, () => ({ a: [], d: [] }));
   for (const w of words) {
     for (const cell of w.cells) {
@@ -444,10 +475,9 @@ function parsePuzzle(apiJson) {
     }
   }
 
-  // Map id -> word
   const wordMap = new Map(words.map(w => [w.id, w]));
 
-  return { rows, cols, title, solution, isBlock, words, wordMap, cellToWords };
+  return { rows, cols, solution, isBlock, words, wordMap, cellToWords };
 }
 
 function freshProgress(spec) {
@@ -455,25 +485,33 @@ function freshProgress(spec) {
     fills: Array.from({ length: spec.rows * spec.cols }, () => ""),
     elapsedMs: 0,
     runningSince: null,
-    checksOn: false
+    wordChecks: false,
+    completed: false,
+    completedAt: null
   };
 }
 
-/* ---------- progress metric (letters filled) ---------- */
+/* ---------- snapshot (letters filled) ---------- */
 
-function completionSnapshot(spec, progress) {
-  let total = 0, filled = 0;
+function snapshot(spec, progress) {
+  let total = 0, filled = 0, correctFilled = 0;
   for (let i = 0; i < spec.solution.length; i++) {
     if (spec.isBlock[i]) continue;
     total++;
-    if ((progress.fills[i] || "").trim()) filled++;
+    const got = (progress.fills[i] || "").toUpperCase();
+    if (got) {
+      filled++;
+      const want = (spec.solution[i] || "").toUpperCase();
+      if (got === want) correctFilled++;
+    }
   }
   const pct = total ? Math.round((filled / total) * 100) : 0;
-  return { total, filled, pct };
+  const allCorrect = (filled === total) && (correctFilled === total);
+  return { total, filled, pct, allCorrect };
 }
 
 async function writeProgress(key, spec, progress) {
-  const snap = completionSnapshot(spec, progress);
+  const snap = snapshot(spec, progress);
   await idb.put("progress", {
     key,
     updatedAt: Date.now(),
@@ -482,18 +520,21 @@ async function writeProgress(key, spec, progress) {
   });
 }
 
-/* ---------- fetch ---------- */
+/* ---------- autosave ---------- */
 
-async function fetchJson(url) {
-  const fetchUrl = API_BASE ? `${API_BASE}${encodeURIComponent(url)}` : url;
-  const resp = await fetch(fetchUrl, { cache: "no-store" });
-  if (!resp.ok) throw new Error(`HTTP ${resp.status}`);
-  const txt = await resp.text();
-  try { return JSON.parse(txt); }
-  catch { throw new Error("Non-JSON response (CORS/proxy issue?)."); }
+async function autosave(immediate = false) {
+  if (!current.key || !current.spec || !current.progress) return;
+
+  if (savePending) clearTimeout(savePending);
+  const delay = immediate ? 0 : 120;
+
+  savePending = setTimeout(async () => {
+    savePending = null;
+    await writeProgress(current.key, current.spec, current.progress);
+  }, delay);
 }
 
-/* ---------- grid rendering & selection ---------- */
+/* ---------- grid rendering & sizing ---------- */
 
 function renderGrid(spec, progress) {
   gridEl.innerHTML = "";
@@ -510,55 +551,37 @@ function renderGrid(spec, progress) {
       cell.textContent = "";
     } else {
       cell.textContent = (progress.fills[i] || "").toUpperCase();
-      cell.addEventListener("click", () => {
-        onCellTap(i);
-      });
+      cell.addEventListener("click", () => onCellTap(i));
     }
+
     gridEl.appendChild(cell);
   }
 
-  repaintChecks();
+  timerEl.textContent = fmtTime(getElapsedMs(progress));
 }
 
 function computeCellSize(rows, cols) {
-  // Available height = viewport - topbar - (clueBar if visible)
   const topbarH = 52;
   const clueH = clueBar.classList.contains("hidden") ? 0 : 40;
 
   const vpW = Math.floor(window.innerWidth);
   const vpH = Math.floor(window.innerHeight);
 
-  // Padding in gridShell: 8px each side, plus safe rounding
   const availW = vpW - 16;
-  const availH = vpH - topbarH - clueH - 16 - safeInsetTop() - safeInsetBottom();
+  const availH = vpH - topbarH - clueH - 16;
 
   const cell = Math.max(20, Math.floor(Math.min(availW / cols, availH / rows)));
   gridEl.style.setProperty("--cell", `${cell}px`);
 }
 
-function safeInsetTop() {
-  // iOS exposes env() only in CSS; we approximate 0 in JS.
-  return 0;
-}
-function safeInsetBottom() { return 0; }
+/* ---------- selection, clue, word highlight ---------- */
 
 function onCellTap(cellIndex) {
   if (!current.spec || !current.progress) return;
-
-  // Ignore blocks
   if (current.spec.isBlock[cellIndex]) return;
 
   const choices = getWordChoicesAtCell(cellIndex);
 
-  if (!choices.length) {
-    // still select single cell
-    setSelection({ cellIndex, wordId: null, dir: null });
-    return;
-  }
-
-  // Toggle logic:
-  // - If tapping same cell again and there are multiple words, cycle through them.
-  // - Else choose: keep current direction if valid; otherwise pick across then down.
   let nextWordId = null;
   let nextDir = null;
 
@@ -594,23 +617,21 @@ function setSelection(sel) {
   current.selected = sel;
   paintSelection();
   showCurrentClue();
+  repaintWordCheck();
 }
 
 function paintSelection() {
-  // Clear all selection/word highlights
   for (const el of gridEl.children) {
-    el.classList.remove("selected", "word");
+    el.classList.remove("selected", "word", "wordOk");
   }
 
   if (!current.selected) return;
 
   const { cellIndex, wordId } = current.selected;
 
-  // Selected cell border
   const selEl = gridEl.querySelector(`[data-i="${cellIndex}"]`);
   if (selEl) selEl.classList.add("selected");
 
-  // Highlight word cells
   if (wordId) {
     const w = current.spec.wordMap.get(wordId);
     if (w) {
@@ -620,14 +641,10 @@ function paintSelection() {
       }
     }
   }
-  repaintChecks();
 }
 
 function showCurrentClue() {
-  if (!current.selected || !current.selected.wordId) {
-    showClue(null);
-    return;
-  }
+  if (!current.selected?.wordId) { showClue(null); return; }
   const w = current.spec.wordMap.get(current.selected.wordId);
   if (!w) { showClue(null); return; }
   const dirName = w.dir === "a" ? "Across" : "Down";
@@ -645,33 +662,64 @@ function showClue(text) {
   if (current.spec) computeCellSize(current.spec.rows, current.spec.cols);
 }
 
+/* ---------- Word checks: entire word only, only if fully filled & correct ---------- */
+
+function repaintWordCheck() {
+  // Clear previous ok tint
+  for (const el of gridEl.children) el.classList.remove("wordOk");
+
+  if (!current.progress?.wordChecks) return;
+  const w = getSelectedWord();
+  if (!w) return;
+
+  // whole word must be filled
+  for (const c of w.cells) {
+    const got = (current.progress.fills[c] || "").toUpperCase();
+    if (!got) return;
+  }
+  // and correct
+  for (const c of w.cells) {
+    const got = (current.progress.fills[c] || "").toUpperCase();
+    const want = (current.spec.solution[c] || "").toUpperCase();
+    if (got !== want) return;
+  }
+
+  // tint entire word
+  for (const c of w.cells) {
+    const el = gridEl.querySelector(`[data-i="${c}"]`);
+    if (el) el.classList.add("wordOk");
+  }
+}
+
+function getSelectedWord() {
+  const id = current.selected?.wordId;
+  if (!id) return null;
+  return current.spec.wordMap.get(id) || null;
+}
+
 /* ---------- typing rules ---------- */
 
 async function onKeyDown(e) {
   if (!current.spec || !current.progress || !current.selected) return;
-
-  const spec = current.spec;
-  const prog = current.progress;
+  if (current.progress.completed) return;
 
   const { cellIndex, wordId } = current.selected;
-  if (spec.isBlock[cellIndex]) return;
+
+  if (current.spec.isBlock[cellIndex]) return;
 
   const key = e.key;
 
-  // Letters
   if (/^[a-zA-Z]$/.test(key)) {
     e.preventDefault();
     setCell(cellIndex, key.toUpperCase());
     await autosave();
 
-    // Move to next cell in selected word
     if (wordId) {
-      const w = spec.wordMap.get(wordId);
+      const w = current.spec.wordMap.get(wordId);
       const pos = w.cells.indexOf(cellIndex);
       if (pos >= 0 && pos < w.cells.length - 1) {
         setSelection({ cellIndex: w.cells[pos + 1], wordId, dir: w.dir });
       } else {
-        // last letter entered: jump to first cell of next word (same direction), else fallback to any next.
         const next = nextWordAfter(wordId) || firstWord();
         if (next) setSelection({ cellIndex: next.cells[0], wordId: next.id, dir: next.dir });
       }
@@ -679,7 +727,6 @@ async function onKeyDown(e) {
     return;
   }
 
-  // Backspace: delete current cell if filled; else move back one (unless at first cell)
   if (key === "Backspace") {
     e.preventDefault();
 
@@ -690,19 +737,17 @@ async function onKeyDown(e) {
     }
 
     if (wordId) {
-      const w = spec.wordMap.get(wordId);
+      const w = current.spec.wordMap.get(wordId);
       const pos = w.cells.indexOf(cellIndex);
       if (pos > 0) {
-        const prevCell = w.cells[pos - 1];
-        setSelection({ cellIndex: prevCell, wordId, dir: w.dir });
-        // delete previous typed letter
-        if (getCell(prevCell)) {
-          setCell(prevCell, "");
+        const prev = w.cells[pos - 1];
+        setSelection({ cellIndex: prev, wordId, dir: w.dir });
+        if (getCell(prev)) {
+          setCell(prev, "");
           await autosave();
         }
-      } // if pos==0 do nothing
+      }
     }
-    return;
   }
 }
 
@@ -717,36 +762,7 @@ function setCell(i, v) {
   const el = gridEl.querySelector(`[data-i="${i}"]`);
   if (el) el.textContent = v;
 
-  // If checks are on, re-evaluate visuals
-  repaintChecks();
-}
-
-function repaintChecks() {
-  if (!current.spec || !current.progress) return;
-  const checksOn = !!current.progress.checksOn;
-
-  for (const el of gridEl.children) {
-    el.classList.remove("good", "bad");
-  }
-  if (!checksOn) return;
-
-  // If a word is selected, check that word only; else do nothing.
-  if (!current.selected?.wordId) return;
-
-  const w = current.spec.wordMap.get(current.selected.wordId);
-  if (!w) return;
-
-  for (const c of w.cells) {
-    const el = gridEl.querySelector(`[data-i="${c}"]`);
-    if (!el) continue;
-
-    const got = (current.progress.fills[c] || "").toUpperCase();
-    if (!got) continue;
-
-    const want = (current.spec.solution[c] || "").toUpperCase();
-    if (got === want) el.classList.add("good");
-    else el.classList.add("bad");
-  }
+  repaintWordCheck();
 }
 
 /* ---------- hint actions ---------- */
@@ -758,7 +774,7 @@ async function hintRevealLetter() {
 
   const want = (current.spec.solution[i] || "").toUpperCase();
   if (want) setCell(i, want);
-  await autosave();
+  await autosave(true);
 }
 
 async function hintRevealWord() {
@@ -768,10 +784,11 @@ async function hintRevealWord() {
     const want = (current.spec.solution[c] || "").toUpperCase();
     if (want) setCell(c, want);
   }
-  await autosave();
+  await autosave(true);
 }
 
 async function hintCheckWord() {
+  // Delete wrong letters only (no filling)
   const w = getSelectedWord();
   if (!w) return;
   for (const c of w.cells) {
@@ -780,10 +797,11 @@ async function hintCheckWord() {
     const want = (current.spec.solution[c] || "").toUpperCase();
     if (got !== want) setCell(c, "");
   }
-  await autosave();
+  await autosave(true);
 }
 
 async function hintCheckPuzzle() {
+  // Delete wrong letters everywhere
   for (let i = 0; i < current.spec.solution.length; i++) {
     if (current.spec.isBlock[i]) continue;
     const got = (current.progress.fills[i] || "").toUpperCase();
@@ -791,38 +809,32 @@ async function hintCheckPuzzle() {
     const want = (current.spec.solution[i] || "").toUpperCase();
     if (got !== want) setCell(i, "");
   }
-  await autosave();
+
+  // If everything is correct + filled => complete
+  const snap = snapshot(current.spec, current.progress);
+  if (snap.allCorrect) {
+    await completePuzzle();
+    return;
+  }
+
+  await autosave(true);
 }
 
-function getSelectedWord() {
-  const id = current.selected?.wordId;
-  if (!id) return null;
-  return current.spec.wordMap.get(id) || null;
+async function completePuzzle() {
+  // stop time, mark completed, show overlay
+  await stopTimerAndSave();
+
+  current.progress.completed = true;
+  current.progress.completedAt = Date.now();
+  await autosave(true);
+
+  congratsBody.textContent = `Solved in ${fmtTime(current.progress.elapsedMs || 0)}`;
+  openSheet("congrats");
 }
 
-/* ---------- autosave ---------- */
+/* ---------- sequencing ---------- */
 
-let savePending = null;
-
-async function autosave() {
-  if (!current.key || !current.spec || !current.progress) return;
-
-  // Debounce saves slightly (mobile friendly)
-  if (savePending) clearTimeout(savePending);
-  savePending = setTimeout(async () => {
-    savePending = null;
-    await writeProgress(current.key, current.spec, current.progress);
-    // home list updates are cheap but avoid doing it every keystroke; only update snap
-    // If user is in puzzle view, we don't re-render the home list.
-  }, 120);
-}
-
-/* ---------- word sequencing ---------- */
-
-function firstWord() {
-  return current.spec.words[0] || null;
-}
-
+function firstWord() { return current.spec.words[0] || null; }
 function nextWordAfter(wordId) {
   const idx = current.spec.words.findIndex(w => w.id === wordId);
   if (idx < 0) return null;
@@ -831,12 +843,8 @@ function nextWordAfter(wordId) {
 
 /* ---------- sheets ---------- */
 
-function openSheet(id) {
-  $(`#${id}`).classList.remove("hidden");
-}
-function closeSheet(id) {
-  $(`#${id}`).classList.add("hidden");
-}
+function openSheet(id) { $(`#${id}`).classList.remove("hidden"); }
+function closeSheet(id) { $(`#${id}`).classList.add("hidden"); }
 
 /* ---------- utils ---------- */
 
