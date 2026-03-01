@@ -1,0 +1,103 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width,initial-scale=1" />
+  <meta name="theme-color" content="#111111" />
+  <link rel="manifest" href="manifest.webmanifest" />
+  <link rel="stylesheet" href="styles.css" />
+  <title>Cryptic Cache</title>
+</head>
+<body>
+  <header>
+    <div class="title">
+      <h1>Cryptic Cache</h1>
+      <p class="sub">Local progress + archive for Lovatt’s Cryptic JSON</p>
+    </div>
+    <div class="header-actions">
+      <button id="installHintBtn" class="ghost">Install help</button>
+    </div>
+  </header>
+
+  <main>
+    <section class="panel">
+      <h2>Fetch & cache</h2>
+      <div class="row">
+        <label>Date</label>
+        <input id="dateInput" type="date" />
+        <button id="loadBtn">Load</button>
+      </div>
+
+      <div class="row">
+        <label>Cache range</label>
+        <input id="rangeDays" type="number" min="1" max="3650" value="14" />
+        <button id="cacheRangeBtn">Cache last N days</button>
+      </div>
+
+      <div class="row">
+        <label class="wide">Status</label>
+        <div id="status" class="status">Ready.</div>
+      </div>
+
+      <details class="details">
+        <summary>Advanced</summary>
+        <div class="row">
+          <label>psid</label>
+          <input id="psidInput" value="100000160" />
+        </div>
+        <p class="hint">
+          If loading fails with CORS, deploy the Cloudflare Worker proxy (code below) and set API_BASE in <code>app.js</code>.
+        </p>
+      </details>
+    </section>
+
+    <section class="panel">
+      <h2>Archive</h2>
+      <div id="archive" class="archive"></div>
+    </section>
+
+    <section id="solverPanel" class="panel hidden">
+      <div class="solverTop">
+        <div>
+          <h2 id="puzzleTitle">Puzzle</h2>
+          <div id="puzzleMeta" class="meta"></div>
+        </div>
+        <div class="solverActions">
+          <button id="saveBtn" class="ghost">Save</button>
+          <button id="checkToggleBtn" class="ghost">Check: Off</button>
+          <button id="clearBtn" class="danger">Clear fills</button>
+        </div>
+      </div>
+
+      <div class="solverGridWrap">
+        <div id="grid" class="grid"></div>
+      </div>
+
+      <div class="cluesWrap">
+        <div>
+          <h3>Across</h3>
+          <ol id="acrossClues"></ol>
+        </div>
+        <div>
+          <h3>Down</h3>
+          <ol id="downClues"></ol>
+        </div>
+      </div>
+    </section>
+  </main>
+
+  <dialog id="installDlg">
+    <h3>Install on iPhone</h3>
+    <ol>
+      <li>Open this site in Safari.</li>
+      <li>Share → <b>Add to Home Screen</b>.</li>
+      <li>Launch from the icon (more resilient storage).</li>
+    </ol>
+    <form method="dialog">
+      <button>OK</button>
+    </form>
+  </dialog>
+
+  <script type="module" src="app.js"></script>
+</body>
+</html>
