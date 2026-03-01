@@ -42,7 +42,6 @@
       <div id="grid" class="grid" role="grid" aria-label="Puzzle grid"></div>
     </div>
 
-    <!-- Hidden input to summon keyboard without showing caret -->
     <input id="kbd" class="kbd" autocomplete="off" autocapitalize="characters" spellcheck="false" />
   </main>
 
@@ -66,6 +65,15 @@
       <button class="sheetItem" id="saveExitBtn">Exit to menu</button>
       <button class="sheetItem danger" id="restartBtn">Restart</button>
       <button class="sheetCancel" data-close="mainMenu">Cancel</button>
+    </div>
+  </div>
+
+  <div id="restartConfirm" class="sheet hidden" role="dialog" aria-modal="true">
+    <div class="sheetCard">
+      <div class="sheetTitle">Restart puzzle?</div>
+      <div class="sheetBody">This will clear all entries and reset your timer for this puzzle.</div>
+      <button class="sheetItem danger" id="restartYesBtn">Yes, restart</button>
+      <button class="sheetCancel" data-close="restartConfirm">Cancel</button>
     </div>
   </div>
 
@@ -94,7 +102,6 @@
     </div>
   </div>
 
-  <!-- Congrats overlay -->
   <div id="congrats" class="sheet hidden" role="dialog" aria-modal="true">
     <div class="sheetCard">
       <div class="sheetTitle">🎉 Congratulations</div>
