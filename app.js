@@ -3,158 +3,380 @@ import * as idb from "./idb.js";
 /**
  * If direct fetch is blocked by CORS, set API_BASE to your Cloudflare Worker URL:
  * const API_BASE = "https://YOUR-WORKER.workers.dev/?apiurl=";
- * and it will fetch: `${API_BASE}${encodeURIComponent(realUrl)}`
  */
-const API_BASE = ""; // leave "" to fetch directly
+const API_BASE = ""; // "" = direct
 
-const $ = (sel) => document.querySelector(sel);
+const PSID_DEFAULT = "100000160";
 
-const statusEl = $("#status");
-const dateInput = $("#dateInput");
-const psidInput = $("#psidInput");
-const loadBtn = $("#loadBtn");
-const cacheRangeBtn = $("#cacheRangeBtn");
-const rangeDays = $("#rangeDays");
+const $ = (s) => document.querySelector(s);
+
+const homeView = $("#homeView");
+const puzzleView = $("#puzzleView");
+
 const archiveEl = $("#archive");
+const homeStatusEl = $("#homeStatus");
+const filterBtn = $("#filterBtn");
 
-const solverPanel = $("#solverPanel");
-const puzzleTitleEl = $("#puzzleTitle");
-const puzzleMetaEl = $("#puzzleMeta");
 const gridEl = $("#grid");
-const acrossEl = $("#acrossClues");
-const downEl = $("#downClues");
-const saveBtn = $("#saveBtn");
-const clearBtn = $("#clearBtn");
-const checkToggleBtn = $("#checkToggleBtn");
+const clueBar = $("#clueBar");
+const timerEl = $("#timer");
+const kbd = $("#kbd");
 
-const installDlg = $("#installDlg");
-$("#installHintBtn").addEventListener("click", () => installDlg.showModal());
+const hintBtn = $("#hintBtn");
+const menuBtn = $("#menuBtn");
+const hintMenu = $("#hintMenu");
+const mainMenu = $("#mainMenu");
+
+const revealLetterBtn = $("#revealLetterBtn");
+const revealWordBtn = $("#revealWordBtn");
+const checkWordBtn = $("#checkWordBtn");
+const checkPuzzleBtn = $("#checkPuzzleBtn");
+
+const toggleChecksBtn = $("#toggleChecksBtn");
+const saveExitBtn = $("#saveExitBtn");
+const restartBtn = $("#restartBtn");
+
+let showIncompleteOnly = false;
 
 let current = {
   key: null,
-  psid: null,
+  psid: PSID_DEFAULT,
   date: null,
-  spec: null,     // parsed puzzle spec (grid, clues, solution)
-  progress: null, // { fills: string[] }
-  check: false
+  spec: null,         // {rows, cols, title, solution[], isBlock[], words[] ...}
+  progress: null,     // { fills[], elapsedMs, runningSince?, checksOn }
+  selected: null      // { cellIndex, wordId, dir }
 };
+
+let timerTick = null;
+
+/* ---------- boot ---------- */
 
 init();
 
 async function init() {
-  // Default date = today (local)
-  const now = new Date();
-  dateInput.value = now.toISOString().slice(0, 10);
-
   // SW
   if ("serviceWorker" in navigator) {
     try { await navigator.serviceWorker.register("./sw.js"); } catch {}
   }
 
-  loadBtn.addEventListener("click", () => loadPuzzle(dateInput.value));
-  cacheRangeBtn.addEventListener("click", () => cacheLastNDays(parseInt(rangeDays.value, 10) || 14));
-  saveBtn.addEventListener("click", () => saveProgress());
-  clearBtn.addEventListener("click", () => clearFills());
-  checkToggleBtn.addEventListener("click", () => {
-    current.check = !current.check;
-    checkToggleBtn.textContent = `Check: ${current.check ? "On" : "Off"}`;
+  filterBtn.addEventListener("click", async () => {
+    showIncompleteOnly = !showIncompleteOnly;
+    filterBtn.setAttribute("aria-pressed", String(showIncompleteOnly));
+    filterBtn.textContent = showIncompleteOnly ? "Showing incomplete" : "Show incomplete";
+    await renderHome();
+  });
+
+  hintBtn.addEventListener("click", () => openSheet("hintMenu"));
+  menuBtn.addEventListener("click", () => openSheet("mainMenu"));
+
+  document.body.addEventListener("click", (e) => {
+    const closeId = e.target?.getAttribute?.("data-close");
+    if (closeId) closeSheet(closeId);
+    if (e.target === hintMenu) closeSheet("hintMenu");
+    if (e.target === mainMenu) closeSheet("mainMenu");
+  });
+
+  revealLetterBtn.addEventListener("click", async () => { closeSheet("hintMenu"); await hintRevealLetter(); });
+  revealWordBtn.addEventListener("click", async () => { closeSheet("hintMenu"); await hintRevealWord(); });
+  checkWordBtn.addEventListener("click", async () => { closeSheet("hintMenu"); await hintCheckWord(); });
+  checkPuzzleBtn.addEventListener("click", async () => { closeSheet("hintMenu"); await hintCheckPuzzle(); });
+
+  toggleChecksBtn.addEventListener("click", async () => {
+    if (!current.progress) return;
+    current.progress.checksOn = !current.progress.checksOn;
+    toggleChecksBtn.setAttribute("aria-pressed", String(current.progress.checksOn));
+    toggleChecksBtn.textContent = `Word checks: ${current.progress.checksOn ? "On" : "Off"}`;
+    await autosave();
     repaintChecks();
   });
 
-  await refreshArchive();
-  setStatus("Ready.");
+  saveExitBtn.addEventListener("click", async () => { closeSheet("mainMenu"); await exitPuzzle(); });
+  restartBtn.addEventListener("click", async () => { closeSheet("mainMenu"); await restartPuzzle(); });
+
+  // Keyboard handling
+  kbd.addEventListener("keydown", onKeyDown);
+
+  // Stop timer when app hides; resume accurately.
+  document.addEventListener("visibilitychange", async () => {
+    if (!current.key) return;
+    if (document.hidden) await stopTimerAndSave();
+    else await startTimerIfPuzzleOpen();
+  });
+
+  window.addEventListener("resize", () => {
+    if (current.spec) computeCellSize(current.spec.rows, current.spec.cols);
+  });
+
+  await renderHome();
+  // Efficient incremental sync (newer first, then older probing).
+  await autoSync();
+  await renderHome();
 }
 
-function setStatus(msg) {
-  statusEl.textContent = msg;
-}
+/* ---------- home ---------- */
 
-function keyFor(psid, date) {
-  return `${psid}|${date}`;
-}
+async function renderHome() {
+  const puzzles = await idb.getAll("puzzles");
+  const progress = await idb.getAll("progress");
+  const progMap = new Map(progress.map((p) => [p.key, p]));
 
-async function cacheLastNDays(n) {
-  const psid = psidInput.value.trim();
-  const start = new Date(dateInput.value);
-  if (Number.isNaN(start.getTime())) return;
+  puzzles.sort((a, b) => (a.date < b.date ? 1 : -1));
 
-  setStatus(`Caching ${n} day(s)…`);
+  archiveEl.innerHTML = "";
+  let shown = 0;
 
-  for (let i = 0; i < n; i++) {
-    const d = new Date(start);
-    d.setDate(d.getDate() - i);
-    const iso = d.toISOString().slice(0, 10);
-    try {
-      await loadPuzzle(iso, { silentRender: true, silentStatus: true, psidOverride: psid });
-      setStatus(`Cached: ${iso} (${i + 1}/${n})`);
-    } catch (e) {
-      setStatus(`Failed ${iso}: ${humanErr(e)}`);
-    }
+  for (const p of puzzles) {
+    const pr = progMap.get(p.key);
+    const snap = pr?.snap || null;
+    const pct = snap?.pct ?? 0;
+    const filled = snap?.filled ?? 0;
+    const total = snap?.total ?? 0;
+
+    if (showIncompleteOnly && total > 0 && filled >= total) continue;
+
+    const card = document.createElement("div");
+    card.className = "card";
+
+    const left = document.createElement("div");
+    left.innerHTML =
+      `<div><b>${escapeHtml(p.date)}</b></div>
+       <small>${filled}/${total} filled</small>`;
+
+    const right = document.createElement("div");
+    right.innerHTML = `<div class="pct"><b>${pct}%</b></div>`;
+
+    const btn = document.createElement("button");
+    btn.className = "openBtn";
+    btn.textContent = "Open";
+    btn.addEventListener("click", async () => {
+      await openPuzzle(p.psid, p.date);
+    });
+
+    right.appendChild(btn);
+    card.appendChild(left);
+    card.appendChild(right);
+    archiveEl.appendChild(card);
+    shown++;
   }
 
-  await refreshArchive();
-  setStatus(`Done. Cached ${n} day(s) (some may have failed).`);
-}
-
-async function loadPuzzle(date, opts = {}) {
-  const psid = (opts.psidOverride || psidInput.value).trim();
-  const key = keyFor(psid, date);
-  current.key = key;
-  current.psid = psid;
-  current.date = date;
-
-  if (!opts.silentStatus) setStatus(`Loading ${date}…`);
-
-  // 1) Try cache first (our own DB)
-  let puzzleRec = await idb.get("puzzles", key);
-  if (!puzzleRec) {
-    // fetch and store
-    const url = `https://data.puzzlexperts.com/puzzleapp-v3/data.php?psid=${encodeURIComponent(psid)}&date=${encodeURIComponent(date)}`;
-    const data = await fetchJson(url);
-    puzzleRec = { key, psid, date, fetchedAt: Date.now(), data };
-    await idb.put("puzzles", puzzleRec);
+  if (!puzzles.length) {
+    archiveEl.innerHTML = `<div class="muted">No cached puzzles yet. Sync will populate automatically.</div>`;
+  } else if (!shown) {
+    archiveEl.innerHTML = `<div class="muted">No puzzles match the current filter.</div>`;
   }
-
-  // 2) Parse puzzle into a usable spec
-  const spec = parsePuzzle(puzzleRec.data);
-  current.spec = spec;
-
-  // 3) Load progress (fills)
-  const saved = await idb.get("progress", key);
-  current.progress = saved?.progress || freshProgress(spec);
-
-  // 4) Render unless silent
-  if (!opts.silentRender) {
-    renderSolver(spec, current.progress, { date, psid });
-    solverPanel.classList.remove("hidden");
-    if (!opts.silentStatus) setStatus(`Loaded ${date}.`);
-  }
-
-  // 5) Update archive % immediately
-  await writePercentSnapshot(key, spec, current.progress);
-  await refreshArchive();
 }
 
-async function fetchJson(url) {
-  const fetchUrl = API_BASE ? `${API_BASE}${encodeURIComponent(url)}` : url;
-  const resp = await fetch(fetchUrl, { cache: "no-store" });
-  if (!resp.ok) throw new Error(`HTTP ${resp.status}`);
-  const txt = await resp.text();
-  try { return JSON.parse(txt); }
-  catch { throw new Error("Non-JSON response (possible CORS/proxy issue)."); }
-}
-
-function humanErr(e) {
-  const s = String(e?.message || e);
-  if (s.toLowerCase().includes("cors")) return "CORS blocked (use proxy).";
-  return s;
-}
+/* ---------- sync (efficient probing) ---------- */
 
 /**
- * The endpoint returns JSON with a cell meta.data string containing URL-encoded params:
- * word0=..., clue0=..., dir0=a|d, start_j0=row, start_k0=col, num_rows, num_columns, etc.
- * Example response is visible here.  [oai_citation:6‡Puzzle Experts](https://data.puzzlexperts.com/puzzleapp-v3/data.php?date=2026-03-01&psid=100000160)
+ * Strategy:
+ * 1) Fetch forward from newest cached date → today (bounded per session).
+ * 2) Probe backward from oldest cached date to discover older puzzles:
+ *    - Keep a persistent "probe cursor" and "fail streak" in localStorage.
+ *    - Stop after bounded requests each session.
  */
+async function autoSync() {
+  const psid = PSID_DEFAULT;
+  const puzzles = await idb.getAll("puzzles");
+  let dates = puzzles.filter(p => p.psid === psid).map(p => p.date);
+  dates.sort(); // ascending ISO
+
+  const today = isoDate(new Date());
+
+  const newest = dates.length ? dates[dates.length - 1] : null;
+  const oldest = dates.length ? dates[0] : null;
+
+  // If empty, seed with today first (quick win).
+  if (!newest) {
+    homeStatusEl.textContent = "Fetching today…";
+    await tryCache(psid, today);
+    homeStatusEl.textContent = "Syncing…";
+    dates = [today];
+  }
+
+  // 1) Forward fill: newest+1 .. today (cap)
+  const forwardCap = 10;
+  let forwardCount = 0;
+  let cursor = addDays(newest || today, 1);
+
+  while (cursor <= today && forwardCount < forwardCap) {
+    homeStatusEl.textContent = `Fetching ${cursor}…`;
+    const ok = await tryCache(psid, cursor);
+    // even if not ok (no puzzle), still move forward
+    cursor = addDays(cursor, 1);
+    forwardCount++;
+  }
+
+  // 2) Backward probing (cap)
+  const state = loadSyncState();
+  let backCursor = state.backCursor || addDays(oldest || today, -1);
+  let failStreak = state.failStreak || 0;
+
+  const backwardCap = 10;
+  let backwardCount = 0;
+
+  while (backwardCount < backwardCap) {
+    // Hard stop: if we've had many consecutive misses, assume no more historical content.
+    if (failStreak >= 21) break;
+
+    homeStatusEl.textContent = `Probing ${backCursor}…`;
+    const ok = await tryCache(psid, backCursor);
+
+    if (ok) failStreak = 0;
+    else failStreak++;
+
+    backCursor = addDays(backCursor, -1);
+    backwardCount++;
+  }
+
+  saveSyncState({ backCursor, failStreak });
+  homeStatusEl.textContent = "Up to date (incremental).";
+}
+
+function loadSyncState() {
+  try { return JSON.parse(localStorage.getItem("crypticSyncState") || "{}"); }
+  catch { return {}; }
+}
+function saveSyncState(s) {
+  localStorage.setItem("crypticSyncState", JSON.stringify(s));
+}
+
+async function tryCache(psid, date) {
+  const key = `${psid}|${date}`;
+  const existing = await idb.get("puzzles", key);
+  if (existing) return true;
+
+  try {
+    const url = `https://data.puzzlexperts.com/puzzleapp-v3/data.php?psid=${encodeURIComponent(psid)}&date=${encodeURIComponent(date)}`;
+    const data = await fetchJson(url);
+    // Some “no puzzle” responses are still JSON; reject if missing expected fields.
+    if (!data?.cells?.[0]?.meta?.data) return false;
+
+    const rec = { key, psid, date, fetchedAt: Date.now(), data };
+    await idb.put("puzzles", rec);
+
+    // Initialize progress/snapshot
+    const spec = parsePuzzle(data);
+    const progress = freshProgress(spec);
+    await writeProgress(key, spec, progress);
+    return true;
+  } catch {
+    return false;
+  }
+}
+
+/* ---------- puzzle open/close ---------- */
+
+async function openPuzzle(psid, date) {
+  const key = `${psid}|${date}`;
+
+  const puzzleRec = await idb.get("puzzles", key);
+  if (!puzzleRec) {
+    // On-demand fetch if user opened a not-yet-cached date (rare if sync is running)
+    homeStatusEl.textContent = `Fetching ${date}…`;
+    const ok = await tryCache(psid, date);
+    if (!ok) return;
+  }
+
+  const finalRec = await idb.get("puzzles", key);
+  const spec = parsePuzzle(finalRec.data);
+
+  const saved = await idb.get("progress", key);
+  const progress = saved?.progress || freshProgress(spec);
+
+  current = {
+    key, psid, date, spec,
+    progress,
+    selected: null
+  };
+
+  // UI: switch view
+  homeView.classList.add("hidden");
+  puzzleView.classList.remove("hidden");
+
+  // Configure menu text
+  toggleChecksBtn.setAttribute("aria-pressed", String(!!progress.checksOn));
+  toggleChecksBtn.textContent = `Word checks: ${progress.checksOn ? "On" : "Off"}`;
+
+  // Render
+  renderGrid(spec, progress);
+  computeCellSize(spec.rows, spec.cols);
+  showClue(null);
+
+  // Focus keyboard
+  setTimeout(() => kbd.focus(), 50);
+
+  await startTimerIfPuzzleOpen();
+}
+
+async function exitPuzzle() {
+  await stopTimerAndSave();
+  current = { key: null, psid: PSID_DEFAULT, date: null, spec: null, progress: null, selected: null };
+
+  puzzleView.classList.add("hidden");
+  homeView.classList.remove("hidden");
+
+  await renderHome();
+}
+
+async function restartPuzzle() {
+  if (!current.spec) return;
+  current.progress = freshProgress(current.spec);
+  current.selected = null;
+  renderGrid(current.spec, current.progress);
+  computeCellSize(current.spec.rows, current.spec.cols);
+  showClue(null);
+  await autosave();
+}
+
+/* ---------- timer ---------- */
+
+async function startTimerIfPuzzleOpen() {
+  if (!current.key || !current.progress) return;
+
+  // Avoid double-start
+  if (current.progress.runningSince) return;
+
+  current.progress.runningSince = Date.now();
+  // tick UI
+  if (timerTick) clearInterval(timerTick);
+  timerTick = setInterval(() => {
+    timerEl.textContent = fmtTime(getElapsedMs(current.progress));
+  }, 250);
+
+  timerEl.textContent = fmtTime(getElapsedMs(current.progress));
+  await autosave(); // persist runningSince
+}
+
+async function stopTimerAndSave() {
+  if (!current.key || !current.progress) return;
+
+  if (timerTick) { clearInterval(timerTick); timerTick = null; }
+
+  if (current.progress.runningSince) {
+    const now = Date.now();
+    current.progress.elapsedMs = (current.progress.elapsedMs || 0) + (now - current.progress.runningSince);
+    current.progress.runningSince = null;
+  }
+  timerEl.textContent = fmtTime(getElapsedMs(current.progress));
+  await autosave();
+}
+
+function getElapsedMs(progress) {
+  const base = progress.elapsedMs || 0;
+  if (progress.runningSince) return base + (Date.now() - progress.runningSince);
+  return base;
+}
+
+function fmtTime(ms) {
+  const s = Math.floor(ms / 1000);
+  const mm = String(Math.floor(s / 60)).padStart(2, "0");
+  const ss = String(s % 60).padStart(2, "0");
+  return `${mm}:${ss}`;
+}
+
+/* ---------- parsing ---------- */
+
 function parsePuzzle(apiJson) {
   const metaData = apiJson?.cells?.[0]?.meta?.data;
   if (!metaData) throw new Error("Unexpected JSON format: missing meta.data");
@@ -163,8 +385,10 @@ function parsePuzzle(apiJson) {
   const rows = parseInt(params.get("num_rows") || "15", 10);
   const cols = parseInt(params.get("num_columns") || "15", 10);
 
-  // Collect word entries (word0..wordN)
-  const words = [];
+  const title = params.get("title") || "Puzzle";
+
+  // Collect word entries
+  const wordsRaw = [];
   for (let i = 0; ; i++) {
     const w = params.get(`word${i}`);
     const clue = params.get(`clue${i}`);
@@ -173,204 +397,457 @@ function parsePuzzle(apiJson) {
     const c = params.get(`start_k${i}`);
     if (!w && !clue && !dir && r === null && c === null) break;
     if (!w || !dir || r === null || c === null) continue;
-    words.push({
+
+    wordsRaw.push({
       idx: i,
       answer: w,
       clue: clue || "",
-      dir,
+      dir, // "a" or "d"
       r: parseInt(r, 10),
       c: parseInt(c, 10)
     });
   }
 
-  const title = params.get("title") || "Puzzle";
-  const id = params.get("id") || "";
-  const category = params.get("category") || "";
-
-  // Build solution grid from words
+  // Build solution grid
   const solution = Array.from({ length: rows * cols }, () => null);
-  for (const entry of words) {
+
+  // Build word objects with cell lists
+  const words = wordsRaw.map((entry) => {
     const dr = entry.dir === "d" ? 1 : 0;
     const dc = entry.dir === "a" ? 1 : 0;
+    const cells = [];
     for (let k = 0; k < entry.answer.length; k++) {
       const rr = entry.r + dr * k;
       const cc = entry.c + dc * k;
       if (rr < 0 || rr >= rows || cc < 0 || cc >= cols) continue;
       const pos = rr * cols + cc;
+      cells.push(pos);
       solution[pos] = entry.answer[k];
+    }
+    return {
+      id: `${entry.dir}:${entry.idx}`,
+      dir: entry.dir,
+      clue: entry.clue,
+      len: entry.answer.length,
+      cells
+    };
+  });
+
+  const isBlock = solution.map((ch) => ch === null);
+
+  // Map each cell -> available wordIds by direction
+  const cellToWords = Array.from({ length: rows * cols }, () => ({ a: [], d: [] }));
+  for (const w of words) {
+    for (const cell of w.cells) {
+      if (w.dir === "a") cellToWords[cell].a.push(w.id);
+      else cellToWords[cell].d.push(w.id);
     }
   }
 
-  // Cells with no solution letter become black squares
-  const isBlack = solution.map((ch) => ch === null);
+  // Map id -> word
+  const wordMap = new Map(words.map(w => [w.id, w]));
 
-  // Clue lists (across/down)
-  const across = [];
-  const down = [];
-  for (const entry of words) {
-    const clueText = `${entry.clue} (${entry.answer.length})`;
-    if (entry.dir === "a") across.push({ n: entry.idx + 1, text: clueText });
-    else down.push({ n: entry.idx + 1, text: clueText });
-  }
-
-  return { rows, cols, title, id, category, solution, isBlack, across, down };
+  return { rows, cols, title, solution, isBlock, words, wordMap, cellToWords };
 }
 
 function freshProgress(spec) {
-  return { fills: Array.from({ length: spec.rows * spec.cols }, () => "") };
+  return {
+    fills: Array.from({ length: spec.rows * spec.cols }, () => ""),
+    elapsedMs: 0,
+    runningSince: null,
+    checksOn: false
+  };
 }
 
-function completionPercent(spec, progress) {
+/* ---------- progress metric (letters filled) ---------- */
+
+function completionSnapshot(spec, progress) {
   let total = 0, filled = 0;
   for (let i = 0; i < spec.solution.length; i++) {
-    if (spec.isBlack[i]) continue;
+    if (spec.isBlock[i]) continue;
     total++;
-    const got = (progress.fills[i] || "").toUpperCase();
-    if (got) filled++;
+    if ((progress.fills[i] || "").trim()) filled++;
   }
-  return { total, filled, pct: total ? Math.round((filled / total) * 100) : 0 };
+  const pct = total ? Math.round((filled / total) * 100) : 0;
+  return { total, filled, pct };
 }
 
-async function writePercentSnapshot(key, spec, progress) {
-  const snap = completionPercent(spec, progress);
-  const rec = await idb.get("progress", key);
-  const next = {
+async function writeProgress(key, spec, progress) {
+  const snap = completionSnapshot(spec, progress);
+  await idb.put("progress", {
     key,
     updatedAt: Date.now(),
     progress,
     snap
-  };
-  await idb.put("progress", next);
+  });
 }
 
-async function saveProgress() {
-  if (!current.key) return;
-  await writePercentSnapshot(current.key, current.spec, current.progress);
-  await refreshArchive();
-  setStatus("Saved.");
+/* ---------- fetch ---------- */
+
+async function fetchJson(url) {
+  const fetchUrl = API_BASE ? `${API_BASE}${encodeURIComponent(url)}` : url;
+  const resp = await fetch(fetchUrl, { cache: "no-store" });
+  if (!resp.ok) throw new Error(`HTTP ${resp.status}`);
+  const txt = await resp.text();
+  try { return JSON.parse(txt); }
+  catch { throw new Error("Non-JSON response (CORS/proxy issue?)."); }
 }
 
-async function clearFills() {
-  if (!current.key) return;
-  current.progress = freshProgress(current.spec);
-  renderSolver(current.spec, current.progress, { date: current.date, psid: current.psid });
-  await saveProgress();
-}
+/* ---------- grid rendering & selection ---------- */
 
-async function refreshArchive() {
-  const puzzles = await idb.getAll("puzzles");
-  const progress = await idb.getAll("progress");
-  const progMap = new Map(progress.map((p) => [p.key, p]));
-
-  // Sort newest date first (string ISO works)
-  puzzles.sort((a, b) => (a.date < b.date ? 1 : -1));
-
-  archiveEl.innerHTML = "";
-  for (const p of puzzles) {
-    const pr = progMap.get(p.key);
-    const pct = pr?.snap?.pct ?? 0;
-    const filled = pr?.snap?.filled ?? 0;
-    const total = pr?.snap?.total ?? 0;
-
-    const card = document.createElement("div");
-    card.className = "card";
-
-    const left = document.createElement("div");
-    left.innerHTML = `<div><b>${escapeHtml(p.date)}</b> <small>${escapeHtml(p.psid)}</small></div>
-                      <small>${filled}/${total} filled</small>`;
-
-    const right = document.createElement("div");
-    right.innerHTML = `<div class="pct"><b>${pct}%</b></div>`;
-
-    const btn = document.createElement("button");
-    btn.textContent = "Open";
-    btn.addEventListener("click", () => loadPuzzle(p.date, { psidOverride: p.psid }));
-
-    right.appendChild(btn);
-    card.appendChild(left);
-    card.appendChild(right);
-    archiveEl.appendChild(card);
-  }
-
-  if (!puzzles.length) {
-    archiveEl.innerHTML = `<div class="status">No cached puzzles yet. Load one above.</div>`;
-  }
-}
-
-function renderSolver(spec, progress, { date, psid }) {
-  puzzleTitleEl.textContent = `${spec.title}`;
-  puzzleMetaEl.textContent = `${date} • psid ${psid}${spec.id ? " • " + spec.id : ""}${spec.category ? " • " + spec.category : ""}`;
-
-  // Clues
-  acrossEl.innerHTML = "";
-  downEl.innerHTML = "";
-  for (const c of spec.across) {
-    const li = document.createElement("li");
-    li.textContent = c.text;
-    acrossEl.appendChild(li);
-  }
-  for (const c of spec.down) {
-    const li = document.createElement("li");
-    li.textContent = c.text;
-    downEl.appendChild(li);
-  }
-
-  // Grid
+function renderGrid(spec, progress) {
   gridEl.innerHTML = "";
-  gridEl.style.gridTemplateColumns = `repeat(${spec.cols}, 28px)`;
+  gridEl.style.gridTemplateColumns = `repeat(${spec.cols}, var(--cell))`;
 
   for (let i = 0; i < spec.rows * spec.cols; i++) {
-    if (spec.isBlack[i]) {
-      const div = document.createElement("div");
-      div.className = "cell black";
-      gridEl.appendChild(div);
-      continue;
+    const cell = document.createElement("div");
+    cell.className = "cell";
+    cell.dataset.i = String(i);
+    cell.setAttribute("role", "gridcell");
+
+    if (spec.isBlock[i]) {
+      cell.classList.add("block");
+      cell.textContent = "";
+    } else {
+      cell.textContent = (progress.fills[i] || "").toUpperCase();
+      cell.addEventListener("click", () => {
+        onCellTap(i);
+      });
     }
-    const inp = document.createElement("input");
-    inp.className = "cell";
-    inp.inputMode = "text";
-    inp.maxLength = 1;
-    inp.value = (progress.fills[i] || "").toUpperCase();
-
-    inp.addEventListener("input", async () => {
-      const v = (inp.value || "").toUpperCase().replace(/[^A-Z]/g, "");
-      inp.value = v;
-      progress.fills[i] = v;
-      if (current.check) paintCellCheck(inp, spec, progress, i);
-      // persist lightly (debounce-less but cheap)
-      await writePercentSnapshot(current.key, spec, progress);
-      await refreshArchive();
-    });
-
-    inp.addEventListener("focus", () => inp.select());
-    gridEl.appendChild(inp);
+    gridEl.appendChild(cell);
   }
 
   repaintChecks();
 }
 
-function repaintChecks() {
-  if (!current.spec) return;
-  const inputs = Array.from(gridEl.querySelectorAll("input.cell"));
-  // inputs excludes black squares, so we must map carefully:
-  let inpIdx = 0;
-  for (let i = 0; i < current.spec.isBlack.length; i++) {
-    if (current.spec.isBlack[i]) continue;
-    const inp = inputs[inpIdx++];
-    inp.classList.remove("good", "bad");
-    if (current.check) paintCellCheck(inp, current.spec, current.progress, i);
+function computeCellSize(rows, cols) {
+  // Available height = viewport - topbar - (clueBar if visible)
+  const topbarH = 52;
+  const clueH = clueBar.classList.contains("hidden") ? 0 : 40;
+
+  const vpW = Math.floor(window.innerWidth);
+  const vpH = Math.floor(window.innerHeight);
+
+  // Padding in gridShell: 8px each side, plus safe rounding
+  const availW = vpW - 16;
+  const availH = vpH - topbarH - clueH - 16 - safeInsetTop() - safeInsetBottom();
+
+  const cell = Math.max(20, Math.floor(Math.min(availW / cols, availH / rows)));
+  gridEl.style.setProperty("--cell", `${cell}px`);
+}
+
+function safeInsetTop() {
+  // iOS exposes env() only in CSS; we approximate 0 in JS.
+  return 0;
+}
+function safeInsetBottom() { return 0; }
+
+function onCellTap(cellIndex) {
+  if (!current.spec || !current.progress) return;
+
+  // Ignore blocks
+  if (current.spec.isBlock[cellIndex]) return;
+
+  const choices = getWordChoicesAtCell(cellIndex);
+
+  if (!choices.length) {
+    // still select single cell
+    setSelection({ cellIndex, wordId: null, dir: null });
+    return;
+  }
+
+  // Toggle logic:
+  // - If tapping same cell again and there are multiple words, cycle through them.
+  // - Else choose: keep current direction if valid; otherwise pick across then down.
+  let nextWordId = null;
+  let nextDir = null;
+
+  if (current.selected && current.selected.cellIndex === cellIndex && choices.length > 1) {
+    const idx = choices.findIndex(c => c.wordId === current.selected.wordId);
+    const next = choices[(idx + 1) % choices.length];
+    nextWordId = next.wordId;
+    nextDir = next.dir;
+  } else if (current.selected) {
+    const keep = choices.find(c => c.dir === current.selected.dir);
+    if (keep) { nextWordId = keep.wordId; nextDir = keep.dir; }
+  }
+
+  if (!nextWordId) {
+    const preferAcross = choices.find(c => c.dir === "a") || choices[0];
+    nextWordId = preferAcross.wordId;
+    nextDir = preferAcross.dir;
+  }
+
+  setSelection({ cellIndex, wordId: nextWordId, dir: nextDir });
+  kbd.focus();
+}
+
+function getWordChoicesAtCell(cellIndex) {
+  const m = current.spec.cellToWords[cellIndex];
+  const out = [];
+  for (const id of (m.a || [])) out.push({ wordId: id, dir: "a" });
+  for (const id of (m.d || [])) out.push({ wordId: id, dir: "d" });
+  return out;
+}
+
+function setSelection(sel) {
+  current.selected = sel;
+  paintSelection();
+  showCurrentClue();
+}
+
+function paintSelection() {
+  // Clear all selection/word highlights
+  for (const el of gridEl.children) {
+    el.classList.remove("selected", "word");
+  }
+
+  if (!current.selected) return;
+
+  const { cellIndex, wordId } = current.selected;
+
+  // Selected cell border
+  const selEl = gridEl.querySelector(`[data-i="${cellIndex}"]`);
+  if (selEl) selEl.classList.add("selected");
+
+  // Highlight word cells
+  if (wordId) {
+    const w = current.spec.wordMap.get(wordId);
+    if (w) {
+      for (const c of w.cells) {
+        const el = gridEl.querySelector(`[data-i="${c}"]`);
+        if (el) el.classList.add("word");
+      }
+    }
+  }
+  repaintChecks();
+}
+
+function showCurrentClue() {
+  if (!current.selected || !current.selected.wordId) {
+    showClue(null);
+    return;
+  }
+  const w = current.spec.wordMap.get(current.selected.wordId);
+  if (!w) { showClue(null); return; }
+  const dirName = w.dir === "a" ? "Across" : "Down";
+  showClue(`${dirName} • ${w.clue} (${w.len})`);
+}
+
+function showClue(text) {
+  if (!text) {
+    clueBar.classList.add("hidden");
+    clueBar.textContent = "";
+  } else {
+    clueBar.classList.remove("hidden");
+    clueBar.textContent = text;
+  }
+  if (current.spec) computeCellSize(current.spec.rows, current.spec.cols);
+}
+
+/* ---------- typing rules ---------- */
+
+async function onKeyDown(e) {
+  if (!current.spec || !current.progress || !current.selected) return;
+
+  const spec = current.spec;
+  const prog = current.progress;
+
+  const { cellIndex, wordId } = current.selected;
+  if (spec.isBlock[cellIndex]) return;
+
+  const key = e.key;
+
+  // Letters
+  if (/^[a-zA-Z]$/.test(key)) {
+    e.preventDefault();
+    setCell(cellIndex, key.toUpperCase());
+    await autosave();
+
+    // Move to next cell in selected word
+    if (wordId) {
+      const w = spec.wordMap.get(wordId);
+      const pos = w.cells.indexOf(cellIndex);
+      if (pos >= 0 && pos < w.cells.length - 1) {
+        setSelection({ cellIndex: w.cells[pos + 1], wordId, dir: w.dir });
+      } else {
+        // last letter entered: jump to first cell of next word (same direction), else fallback to any next.
+        const next = nextWordAfter(wordId) || firstWord();
+        if (next) setSelection({ cellIndex: next.cells[0], wordId: next.id, dir: next.dir });
+      }
+    }
+    return;
+  }
+
+  // Backspace: delete current cell if filled; else move back one (unless at first cell)
+  if (key === "Backspace") {
+    e.preventDefault();
+
+    if (getCell(cellIndex)) {
+      setCell(cellIndex, "");
+      await autosave();
+      return;
+    }
+
+    if (wordId) {
+      const w = spec.wordMap.get(wordId);
+      const pos = w.cells.indexOf(cellIndex);
+      if (pos > 0) {
+        const prevCell = w.cells[pos - 1];
+        setSelection({ cellIndex: prevCell, wordId, dir: w.dir });
+        // delete previous typed letter
+        if (getCell(prevCell)) {
+          setCell(prevCell, "");
+          await autosave();
+        }
+      } // if pos==0 do nothing
+    }
+    return;
   }
 }
 
-function paintCellCheck(inp, spec, progress, i) {
-  inp.classList.remove("good", "bad");
-  const got = (progress.fills[i] || "").toUpperCase();
-  if (!got) return;
-  const want = (spec.solution[i] || "").toUpperCase();
-  if (got === want) inp.classList.add("good");
-  else inp.classList.add("bad");
+/* ---------- cell updates ---------- */
+
+function getCell(i) {
+  return (current.progress.fills[i] || "").toUpperCase();
 }
 
+function setCell(i, v) {
+  current.progress.fills[i] = v;
+  const el = gridEl.querySelector(`[data-i="${i}"]`);
+  if (el) el.textContent = v;
+
+  // If checks are on, re-evaluate visuals
+  repaintChecks();
+}
+
+function repaintChecks() {
+  if (!current.spec || !current.progress) return;
+  const checksOn = !!current.progress.checksOn;
+
+  for (const el of gridEl.children) {
+    el.classList.remove("good", "bad");
+  }
+  if (!checksOn) return;
+
+  // If a word is selected, check that word only; else do nothing.
+  if (!current.selected?.wordId) return;
+
+  const w = current.spec.wordMap.get(current.selected.wordId);
+  if (!w) return;
+
+  for (const c of w.cells) {
+    const el = gridEl.querySelector(`[data-i="${c}"]`);
+    if (!el) continue;
+
+    const got = (current.progress.fills[c] || "").toUpperCase();
+    if (!got) continue;
+
+    const want = (current.spec.solution[c] || "").toUpperCase();
+    if (got === want) el.classList.add("good");
+    else el.classList.add("bad");
+  }
+}
+
+/* ---------- hint actions ---------- */
+
+async function hintRevealLetter() {
+  if (!current.selected) return;
+  const i = current.selected.cellIndex;
+  if (current.spec.isBlock[i]) return;
+
+  const want = (current.spec.solution[i] || "").toUpperCase();
+  if (want) setCell(i, want);
+  await autosave();
+}
+
+async function hintRevealWord() {
+  const w = getSelectedWord();
+  if (!w) return;
+  for (const c of w.cells) {
+    const want = (current.spec.solution[c] || "").toUpperCase();
+    if (want) setCell(c, want);
+  }
+  await autosave();
+}
+
+async function hintCheckWord() {
+  const w = getSelectedWord();
+  if (!w) return;
+  for (const c of w.cells) {
+    const got = (current.progress.fills[c] || "").toUpperCase();
+    if (!got) continue;
+    const want = (current.spec.solution[c] || "").toUpperCase();
+    if (got !== want) setCell(c, "");
+  }
+  await autosave();
+}
+
+async function hintCheckPuzzle() {
+  for (let i = 0; i < current.spec.solution.length; i++) {
+    if (current.spec.isBlock[i]) continue;
+    const got = (current.progress.fills[i] || "").toUpperCase();
+    if (!got) continue;
+    const want = (current.spec.solution[i] || "").toUpperCase();
+    if (got !== want) setCell(i, "");
+  }
+  await autosave();
+}
+
+function getSelectedWord() {
+  const id = current.selected?.wordId;
+  if (!id) return null;
+  return current.spec.wordMap.get(id) || null;
+}
+
+/* ---------- autosave ---------- */
+
+let savePending = null;
+
+async function autosave() {
+  if (!current.key || !current.spec || !current.progress) return;
+
+  // Debounce saves slightly (mobile friendly)
+  if (savePending) clearTimeout(savePending);
+  savePending = setTimeout(async () => {
+    savePending = null;
+    await writeProgress(current.key, current.spec, current.progress);
+    // home list updates are cheap but avoid doing it every keystroke; only update snap
+    // If user is in puzzle view, we don't re-render the home list.
+  }, 120);
+}
+
+/* ---------- word sequencing ---------- */
+
+function firstWord() {
+  return current.spec.words[0] || null;
+}
+
+function nextWordAfter(wordId) {
+  const idx = current.spec.words.findIndex(w => w.id === wordId);
+  if (idx < 0) return null;
+  return current.spec.words[idx + 1] || null;
+}
+
+/* ---------- sheets ---------- */
+
+function openSheet(id) {
+  $(`#${id}`).classList.remove("hidden");
+}
+function closeSheet(id) {
+  $(`#${id}`).classList.add("hidden");
+}
+
+/* ---------- utils ---------- */
+
+function isoDate(d) {
+  return new Date(d.getTime() - d.getTimezoneOffset() * 60000).toISOString().slice(0, 10);
+}
+function addDays(iso, delta) {
+  const d = new Date(`${iso}T00:00:00`);
+  d.setDate(d.getDate() + delta);
+  return isoDate(d);
+}
 function escapeHtml(s) {
   return String(s).replace(/[&<>"']/g, (c) => ({
     "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#039;"
