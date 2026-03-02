@@ -1,9 +1,27 @@
 import * as idb from "./idb.js";
 
+/* ===========================
+   CONFIG
+=========================== */
+
 const API_BASE = "";
 const PSID_DEFAULT = "100000160";
+
 const FETCH_TIMEOUT_MS = 8000;
 const HARD_SYNC_TIMEOUT_MS = 15000;
+
+// Sync policy
+const BACKGROUND_SYNC_EVERY_MS = 10 * 60 * 1000; // 10 minutes
+const AHEAD_DAYS_PROBE = 3;                      // also probe today..today+3
+const ALSO_PROBE_YESTERDAY = true;
+
+// When catching up from newest cached date to now, cap total days per sync pass
+// (keeps the UI responsive even if you haven’t opened the app in a long time).
+const CATCHUP_MAX_DAYS_PER_PASS = 120;
+
+/* ===========================
+   DOM
+=========================== */
 
 const $ = (s) => document.querySelector(s);
 
@@ -49,49 +67,73 @@ const saveExitBtn = $("#saveExitBtn");
 const restartBtn = $("#restartBtn");
 const restartYesBtn = $("#restartYesBtn");
 
+/* ===========================
+   STATE
+=========================== */
+
 let filterMode = localStorage.getItem("lovcrypticFilter") || "all";
 let sortMode = localStorage.getItem("lovcrypticSort") || "newest";
 
-let current = { key:null, psid:PSID_DEFAULT, date:null, spec:null, progress:null, selected:null };
+let current = {
+  key: null,
+  psid: PSID_DEFAULT,
+  date: null,
+  spec: null,
+  progress: null,
+  selected: null
+};
+
+let puzzleOpen = false;
 
 let savePending = null;
-let correctWordIds = new Set();
-let syncInFlight = false;
 
-// timer loop (RAF)
+// Verified-correct words (when checks enabled)
+let correctWordIds = new Set();
+
+// Sync
+let syncInFlight = false;
+let bgSyncTimer = null;
+
+// Timer loop (RAF)
 let clockRaf = null;
 let clockActive = false;
 let lastPaintedSecond = null;
 
+/* ===========================
+   INIT
+=========================== */
+
 init();
 
 async function init() {
-  // --- Service worker: auto-update + auto-reload so GitHub deploys appear ---
   await registerServiceWorker();
 
   applySavedTheme();
   applyLastUpdatedLabel();
 
+  // Home controls
   sortBtn.addEventListener("click", () => openSheet("sortMenu"));
   filterBtn.addEventListener("click", () => openSheet("filterMenu"));
   homeMenuBtn.addEventListener("click", () => openSheet("homeMenu"));
-
   homeThemeBtn.addEventListener("click", () => {
     closeSheet("homeMenu");
     openSheet("themeMenu");
   });
 
+  // Puzzle controls
   hintBtn.addEventListener("click", () => openSheet("hintMenu"));
   menuBtn.addEventListener("click", () => openSheet("mainMenu"));
 
+  // Home status retry
   homeStatusEl.addEventListener("click", () => {
     if (homeStatusEl.dataset.retry === "1") {
       homeStatusEl.dataset.retry = "0";
       homeStatusEl.textContent = "Syncing…";
-      kickSync();
+      kickSync({ reason: "manual" });
     }
   });
 
+  // Global click handling (sheets)
   document.body.addEventListener("click", async (e) => {
     const closeId = e.target?.getAttribute?.("data-close");
     if (closeId) closeSheet(closeId);
@@ -128,6 +170,7 @@ async function init() {
     }
   });
 
+  // Hints + checks
   revealLetterBtn.addEventListener("click", async () => { closeSheet("hintMenu"); await hintRevealLetter(); });
   revealWordBtn.addEventListener("click", async () => { closeSheet("hintMenu"); await hintRevealWord(); });
   checkWordBtn.addEventListener("click", async () => { closeSheet("hintMenu"); await hintCheckWord(); });
@@ -150,6 +193,7 @@ async function init() {
     await autosave(true);
   });
 
+  // Menu actions
   saveExitBtn.addEventListener("click", async () => { closeSheet("mainMenu"); await exitPuzzle(); });
 
   restartBtn.addEventListener("click", () => { closeSheet("mainMenu"); openSheet("restartConfirm"); });
@@ -160,22 +204,27 @@ async function init() {
     await exitPuzzle();
   });
 
+  // Keyboard
   kbd.addEventListener("keydown", onKeyDown);
 
+  // Lifecycle: sync on returning to foreground; timer only if puzzleOpen
   document.addEventListener("visibilitychange", async () => {
-    if (!current.key) return;
-    if (document.hidden) await stopTimerAndSave();
-    else await startTimerIfOpen(true);
+    if (!document.hidden) {
+      kickSync({ reason: "visibility" });
+      if (puzzleOpen) await startTimerIfOpen(true);
+    } else {
+      if (puzzleOpen) await stopTimerAndSave();
+    }
   });
 
   window.addEventListener("pageshow", async () => {
-    if (!current.key) return;
-    await startTimerIfOpen(true);
+    kickSync({ reason: "pageshow" });
+    if (puzzleOpen) await startTimerIfOpen(true);
   });
 
   window.addEventListener("focus", async () => {
-    if (!current.key) return;
-    await startTimerIfOpen(true);
+    kickSync({ reason: "focus" });
+    if (puzzleOpen) await startTimerIfOpen(true);
   });
 
   window.addEventListener("resize", () => {
@@ -183,20 +232,22 @@ async function init() {
   });
 
   await renderHome();
-  kickSync();
+
+  scheduleBackgroundSync();
+
+  kickSync({ reason: "init" });
 }
 
-/* ------------------ SW registration (auto update + reload) ------------------ */
+/* ===========================
+   SERVICE WORKER (auto-update)
+=========================== */
 
 async function registerServiceWorker() {
   if (!("serviceWorker" in navigator)) return;
-
   try {
     const reg = await navigator.serviceWorker.register("./sw.js");
 
-    if (reg.waiting) {
-      reg.waiting.postMessage({ type: "SKIP_WAITING" });
-    }
+    if (reg.waiting) reg.waiting.postMessage({ type: "SKIP_WAITING" });
 
     reg.addEventListener("updatefound", () => {
       const nw = reg.installing;
@@ -214,11 +265,13 @@ async function registerServiceWorker() {
       window.location.reload();
     });
   } catch {
-    // SW is optional; app still runs
+    // Optional
   }
 }
 
-/* ------------------ theme ------------------ */
+/* ===========================
+   THEME
+=========================== */
 
 function applySavedTheme() {
   const t = localStorage.getItem("lovcrypticTheme") || "light";
@@ -230,7 +283,9 @@ function setTheme(theme, opts = {}) {
   if (!opts.silent && current.spec) computeCellSize(current.spec.rows, current.spec.cols);
 }
 
-/* ------------------ updated label ------------------ */
+/* ===========================
+   UPDATED LABEL
+=========================== */
 
 function applyLastUpdatedLabel() {
   const s = localStorage.getItem("lovcrypticLastUpdated");
@@ -244,7 +299,9 @@ function setLastUpdatedNow() {
   homeStatusEl.textContent = `Updated ${stamp}`;
 }
 
-/* ------------------ home render ------------------ */
+/* ===========================
+   HOME LIST
+=========================== */
 
 async function renderHome() {
   const puzzles = await idb.getAll("puzzles");
@@ -317,7 +374,24 @@ async function renderHome() {
   }
 }
 
-/* ------------------ sync (hard timeout to prevent infinite “Syncing…”) ------------------ */
+/* ===========================
+   BACKGROUND SYNC (home only)
+=========================== */
+
+function scheduleBackgroundSync() {
+  if (bgSyncTimer) clearInterval(bgSyncTimer);
+
+  bgSyncTimer = setInterval(() => {
+    const onHome = !homeView.classList.contains("hidden");
+    if (!onHome) return;
+    if (document.hidden) return;
+    kickSync({ reason: "interval" });
+  }, BACKGROUND_SYNC_EVERY_MS);
+}
+
+/* ===========================
+   SYNC
+=========================== */
 
 function withTimeout(promise, ms) {
   return new Promise((resolve, reject) => {
@@ -327,7 +401,10 @@ function withTimeout(promise, ms) {
   });
 }
 
-function kickSync() {
+function kickSync({ reason } = {}) {
+  const onHome = !homeView.classList.contains("hidden");
+  if (!onHome) return;
+
   if (syncInFlight) return;
   syncInFlight = true;
 
@@ -350,22 +427,42 @@ function kickSync() {
 
 async function autoSync() {
   const psid = PSID_DEFAULT;
+
+  // 1) Always probe around today for “release window”
+  const today = isoDate(new Date());
+  const probeDates = new Set();
+
+  if (ALSO_PROBE_YESTERDAY) probeDates.add(addDays(today, -1));
+  probeDates.add(today);
+  for (let k = 1; k <= AHEAD_DAYS_PROBE; k++) probeDates.add(addDays(today, k));
+
+  for (const d of probeDates) await tryCache(psid, d);
+
+  // 2) Now ensure we never miss dates: check every date from newest cached to today (+ahead)
   const puzzles = await idb.getAll("puzzles");
   const dates = puzzles.filter(p => p.psid === psid).map(p => p.date).sort();
 
-  const today = isoDate(new Date());
   const newest = dates.length ? dates[dates.length - 1] : null;
   const oldest = dates.length ? dates[0] : null;
 
-  if (!newest) await tryCache(psid, today);
+  const targetEnd = addDays(today, AHEAD_DAYS_PROBE);
 
-  const forwardCap = 10;
-  let cursor = addDays(newest || today, 1);
-  for (let i = 0; cursor <= today && i < forwardCap; i++) {
-    await tryCache(psid, cursor);
-    cursor = addDays(cursor, 1);
+  if (newest) {
+    // start at next day after newest cached; iterate day-by-day to targetEnd
+    let cursor = addDays(newest, 1);
+    let steps = 0;
+
+    while (cursor <= targetEnd && steps < CATCHUP_MAX_DAYS_PER_PASS) {
+      await tryCache(psid, cursor);
+      cursor = addDays(cursor, 1);
+      steps++;
+    }
+  } else {
+    // no cache at all: try today then walk backwards a bit via the backward probe below
+    await tryCache(psid, today);
   }
 
+  // 3) Backward probe for older puzzles (incremental)
   const state = loadSyncState();
   let backCursor = state.backCursor || addDays(oldest || today, -1);
   let failStreak = state.failStreak || 0;
@@ -404,6 +501,7 @@ async function tryCache(psid, date) {
     const spec = parsePuzzle(data);
     const progress = freshProgress(spec);
     await writeProgress(key, spec, progress);
+
     return true;
   } catch {
     return false;
@@ -418,11 +516,7 @@ async function fetchJson(url) {
     const resp = await fetch(fetchUrl, {
       cache: "no-store",
       signal: ctrl.signal,
-      headers: {
-        // discourage any intermediate caches
-        "Cache-Control": "no-store",
-        "Pragma": "no-cache",
-      },
+      headers: { "Cache-Control": "no-store", "Pragma": "no-cache" }
     });
     if (!resp.ok) throw new Error(`HTTP ${resp.status}`);
     const txt = await resp.text();
@@ -432,7 +526,9 @@ async function fetchJson(url) {
   }
 }
 
-/* ------------------ puzzle open/close ------------------ */
+/* ===========================
+   PUZZLE OPEN/CLOSE
+=========================== */
 
 async function openPuzzle(psid, date) {
   const key = `${psid}|${date}`;
@@ -452,6 +548,7 @@ async function openPuzzle(psid, date) {
   await writeProgress(key, spec, progress);
 
   current = { key, psid, date, spec, progress, selected: null };
+  puzzleOpen = true;
 
   toggleChecksBtn.setAttribute("aria-pressed", String(!!progress.wordChecks));
   toggleChecksBtn.textContent = `Word checks: ${progress.wordChecks ? "On" : "Off"}`;
@@ -478,16 +575,23 @@ async function openPuzzle(psid, date) {
 }
 
 async function exitPuzzle() {
+  // CRITICAL: mark puzzle closed first so no focus/pageshow handlers can restart timer
+  puzzleOpen = false;
+
   await stopTimerAndSave();
 
   current = { key:null, psid:PSID_DEFAULT, date:null, spec:null, progress:null, selected:null };
   correctWordIds.clear();
-  stopClockLoop();
+  stopClockLoop();              // hard stop loop
+  timerEl.textContent = "00:00"; // neutral display when no puzzle
 
   puzzleView.classList.add("hidden");
   homeView.classList.remove("hidden");
 
   await renderHome();
+
+  // refresh cache after returning home
+  kickSync({ reason: "return_home" });
 }
 
 async function restartPuzzle() {
@@ -508,7 +612,9 @@ async function restartPuzzle() {
   await autosave(true);
 }
 
-/* ------------------ timer (RAF) ------------------ */
+/* ===========================
+   TIMER (robust)
+=========================== */
 
 function getElapsedMs(progress) {
   const base = progress.elapsedMs || 0;
@@ -531,6 +637,7 @@ function startClockLoop() {
 
   const tick = () => {
     if (!clockActive) return;
+    if (!puzzleOpen) return; // safety: never tick when puzzle closed
     paintTimer();
     clockRaf = requestAnimationFrame(tick);
   };
@@ -544,6 +651,7 @@ function stopClockLoop() {
 }
 
 async function startTimerIfOpen(ensureVisible = false) {
+  if (!puzzleOpen) return;
   if (!current.key || !current.progress) return;
 
   if (current.progress.completed) {
@@ -555,24 +663,33 @@ async function startTimerIfOpen(ensureVisible = false) {
   if (!current.progress.runningSince) current.progress.runningSince = Date.now();
 
   startClockLoop();
-  if (ensureVisible) { lastPaintedSecond = null; paintTimer(); }
+  if (ensureVisible) {
+    lastPaintedSecond = null;
+    paintTimer();
+  }
 
   await autosave(true);
 }
 
 async function forceRestartTimer() {
   stopClockLoop();
+
+  if (!current.progress) return;
+
   current.progress.elapsedMs = 0;
   current.progress.runningSince = Date.now();
+
   timerEl.textContent = "00:00";
   lastPaintedSecond = null;
-  startClockLoop();
+
+  if (puzzleOpen) startClockLoop();
 }
 
 async function stopTimerAndSave() {
-  if (!current.key || !current.progress) return;
-
+  // stop loop first so UI never looks like it's ticking after exit
   stopClockLoop();
+
+  if (!current.key || !current.progress) return;
 
   if (current.progress.runningSince) {
     const now = Date.now();
@@ -592,7 +709,9 @@ function fmtTime(ms) {
   return `${mm}:${ss}`;
 }
 
-/* ------------------ parse + persistence ------------------ */
+/* ===========================
+   PARSE + PROGRESS
+=========================== */
 
 function parsePuzzle(apiJson) {
   const metaData = apiJson?.cells?.[0]?.meta?.data;
@@ -639,6 +758,7 @@ function parsePuzzle(apiJson) {
       else cellToWords[cell].d.push(w.id);
     }
   }
+
   const wordMap = new Map(words.map(w => [w.id, w]));
   return { rows, cols, solution, isBlock, words, wordMap, cellToWords };
 }
@@ -679,6 +799,7 @@ async function writeProgress(key, spec, progress) {
 
 async function autosave(immediate = false) {
   if (!current.key || !current.spec || !current.progress) return;
+
   if (savePending) clearTimeout(savePending);
   const delay = immediate ? 0 : 120;
 
@@ -688,7 +809,9 @@ async function autosave(immediate = false) {
   }, delay);
 }
 
-/* ------------------ grid + sizing ------------------ */
+/* ===========================
+   GRID RENDER + SIZING
+=========================== */
 
 function renderGrid(spec, progress) {
   gridEl.innerHTML = "";
@@ -710,7 +833,7 @@ function renderGrid(spec, progress) {
   }
 
   lastPaintedSecond = null;
-  paintTimer();
+  if (puzzleOpen) paintTimer();
 }
 
 function computeCellSize(rows, cols) {
@@ -727,7 +850,9 @@ function computeCellSize(rows, cols) {
   gridEl.style.setProperty("--cell", `${cell}px`);
 }
 
-/* ------------------ selection + clue (no Across/Down) ------------------ */
+/* ===========================
+   SELECTION + CLUE (no Across/Down)
+=========================== */
 
 function onCellTap(cellIndex) {
   if (!current.spec || !current.progress) return;
@@ -814,7 +939,9 @@ function showClue(text) {
   if (current.spec) computeCellSize(current.spec.rows, current.spec.cols);
 }
 
-/* ------------------ word checks (verified correct) ------------------ */
+/* ===========================
+   WORD CHECKS (verified correct)
+=========================== */
 
 function clearAllGreen() {
   for (const el of gridEl.children) el.classList.remove("wordOk");
@@ -830,6 +957,7 @@ function recomputeCorrectWords() {
 function paintGreenFromSet() {
   clearAllGreen();
   if (!current.progress?.wordChecks) return;
+
   for (const id of correctWordIds) {
     const w = current.spec.wordMap.get(id);
     if (!w) continue;
@@ -859,9 +987,12 @@ function cellIsVerifiedCorrect(cellIndex) {
   return ids.some(id => correctWordIds.has(id));
 }
 
-/* ------------------ typing (block overwrite on verified-correct) ------------------ */
+/* ===========================
+   TYPING (includes overwrite block for verified words)
+=========================== */
 
 async function onKeyDown(e) {
+  if (!puzzleOpen) return;
   if (!current.spec || !current.progress || !current.selected) return;
   if (current.progress.completed) return;
 
@@ -873,7 +1004,7 @@ async function onKeyDown(e) {
   if (/^[a-zA-Z]$/.test(key)) {
     e.preventDefault();
 
-    // If checks ON and this cell is part of any verified-correct word: no overwrite.
+    // If checks ON and cell is within any verified-correct word: no overwrite
     if (current.progress.wordChecks && cellIsVerifiedCorrect(cellIndex)) {
       advanceForward(wordId, cellIndex);
       return;
@@ -890,7 +1021,7 @@ async function onKeyDown(e) {
 
     const filledHere = getCell(cellIndex);
 
-    // If checks ON and verified-correct: do not delete; move back.
+    // If checks ON and verified-correct: do not delete; move back
     if (filledHere && current.progress.wordChecks && cellIsVerifiedCorrect(cellIndex)) {
       moveBackOneCell(wordId, cellIndex, { deletePrev: false });
       return;
@@ -953,7 +1084,9 @@ function setCell(i, v) {
   }
 }
 
-/* ------------------ hints ------------------ */
+/* ===========================
+   HINTS
+=========================== */
 
 async function hintRevealLetter() {
   if (!current.selected) return;
@@ -1019,37 +1152,46 @@ async function completePuzzle() {
   openSheet("congrats");
 }
 
-/* ------------------ sequencing ------------------ */
+/* ===========================
+   WORD ORDER
+=========================== */
 
-function firstWord() { return current.spec.words[0] || null; }
+function firstWord() { return current.spec?.words?.[0] || null; }
 function nextWordAfter(wordId) {
   const idx = current.spec.words.findIndex(w => w.id === wordId);
   if (idx < 0) return null;
   return current.spec.words[idx + 1] || null;
 }
 
-/* ------------------ sheets ------------------ */
+/* ===========================
+   SHEETS
+=========================== */
 
 function openSheet(id) {
   document.body.classList.add("modalOpen");
   $(`#${id}`).classList.remove("hidden");
 }
+
 function closeSheet(id) {
   $(`#${id}`).classList.add("hidden");
   const anyOpen = document.querySelector(".sheet:not(.hidden)");
   if (!anyOpen) document.body.classList.remove("modalOpen");
 }
 
-/* ------------------ utils ------------------ */
+/* ===========================
+   UTILS
+=========================== */
 
 function isoDate(d) {
   return new Date(d.getTime() - d.getTimezoneOffset() * 60000).toISOString().slice(0, 10);
 }
+
 function addDays(iso, delta) {
   const d = new Date(`${iso}T00:00:00`);
   d.setDate(d.getDate() + delta);
   return isoDate(d);
 }
+
 function escapeHtml(s) {
   return String(s).replace(/[&<>"']/g, (c) => ({
     "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#039;"
