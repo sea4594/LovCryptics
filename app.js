@@ -15,19 +15,17 @@ const FETCH_TIMEOUT_MS = 8000;
 const INDEX_REFRESH_EVERY_MS = 30 * 60 * 1000;
 
 const DRIVE_PROGRESS_FILENAME = "lovcryptics_progress_v1.json";
-
-// < 10s should be treated as "Not started"
 const STARTED_THRESHOLD_MS = 10_000;
 
 const LS = {
   filter: "lovcrypticsFilter",
   sort: "lovcrypticsSort",
-  themeBase: "lovcrypticsThemeBase", // "blackwhite" | "sage" | ...
-  themeMode: "lovcrypticsThemeMode", // "light" | "dark"
+  themeBase: "lovcrypticsThemeBase",
+  themeMode: "lovcrypticsThemeMode",
   lastUpdated: "lovcrypticsLastUpdated",
   autoLogin: "lovcrypticsGoogleAutoLogin",
   token: "lovcrypticsGoogleAccessToken",
-  tokenExp: "lovcrypticsGoogleAccessTokenExp", // epoch ms
+  tokenExp: "lovcrypticsGoogleAccessTokenExp",
 };
 
 /* ===========================
@@ -81,6 +79,7 @@ const checkPuzzleBtn = $("#checkPuzzleBtn");
 const toggleChecksBtn = $("#toggleChecksBtn");
 
 const saveExitBtn = $("#saveExitBtn");
+const puzzleThemeBtn = $("#puzzleThemeBtn");
 const restartBtn = $("#restartBtn");
 const restartYesBtn = $("#restartYesBtn");
 
@@ -105,15 +104,12 @@ let puzzleOpen = false;
 let savePending = null;
 let syncPending = null;
 
-// verified correct words
 let correctWordIds = new Set();
 
-// timer loop
 let clockRaf = null;
 let clockActive = false;
 let lastPaintedSecond = null;
 
-// index refresh timer
 let indexTimer = null;
 
 // auth
@@ -175,7 +171,13 @@ async function init() {
   hintBtn.addEventListener("click", () => openSheet("hintMenu"));
   menuBtn.addEventListener("click", () => openSheet("mainMenu"));
 
-  // Global click handling (sheets + pickers)
+  // Themes inside puzzle menu
+  puzzleThemeBtn.addEventListener("click", () => {
+    closeSheet("mainMenu");
+    openSheet("themeMenu");
+  });
+
+  // Global click handling
   document.body.addEventListener("click", async (e) => {
     const closeId = e.target?.getAttribute?.("data-close");
     if (closeId) closeSheet(closeId);
@@ -210,28 +212,15 @@ async function init() {
     const themeBase = e.target?.getAttribute?.("data-theme-base");
     if (themeBase) {
       setThemeBase(themeBase);
-      // keep menu open; user might toggle light/dark
       return;
     }
   });
 
   // Hints + checks
-  revealLetterBtn.addEventListener("click", async () => {
-    closeSheet("hintMenu");
-    await hintRevealLetter();
-  });
-  revealWordBtn.addEventListener("click", async () => {
-    closeSheet("hintMenu");
-    await hintRevealWord();
-  });
-  checkWordBtn.addEventListener("click", async () => {
-    closeSheet("hintMenu");
-    await hintCheckWord();
-  });
-  checkPuzzleBtn.addEventListener("click", async () => {
-    closeSheet("hintMenu");
-    await hintCheckPuzzle();
-  });
+  revealLetterBtn.addEventListener("click", async () => { closeSheet("hintMenu"); await hintRevealLetter(); });
+  revealWordBtn.addEventListener("click", async () => { closeSheet("hintMenu"); await hintRevealWord(); });
+  checkWordBtn.addEventListener("click", async () => { closeSheet("hintMenu"); await hintCheckWord(); });
+  checkPuzzleBtn.addEventListener("click", async () => { closeSheet("hintMenu"); await hintCheckPuzzle(); });
 
   toggleChecksBtn.addEventListener("click", async () => {
     if (!current.progress) return;
@@ -250,24 +239,12 @@ async function init() {
   });
 
   // Menu actions
-  saveExitBtn.addEventListener("click", async () => {
-    closeSheet("mainMenu");
-    await exitPuzzle();
-  });
+  saveExitBtn.addEventListener("click", async () => { closeSheet("mainMenu"); await exitPuzzle(); });
 
-  restartBtn.addEventListener("click", () => {
-    closeSheet("mainMenu");
-    openSheet("restartConfirm");
-  });
-  restartYesBtn.addEventListener("click", async () => {
-    closeSheet("restartConfirm");
-    await restartPuzzle();
-  });
+  restartBtn.addEventListener("click", () => { closeSheet("mainMenu"); openSheet("restartConfirm"); });
+  restartYesBtn.addEventListener("click", async () => { closeSheet("restartConfirm"); await restartPuzzle(); });
 
-  congratsExitBtn.addEventListener("click", async () => {
-    closeSheet("congrats");
-    await exitPuzzle();
-  });
+  congratsExitBtn.addEventListener("click", async () => { closeSheet("congrats"); await exitPuzzle(); });
 
   // Keyboard
   kbd.addEventListener("keydown", onKeyDown);
@@ -276,9 +253,7 @@ async function init() {
   // Lifecycle
   document.addEventListener("visibilitychange", async () => {
     if (!document.hidden) {
-      try {
-        await normalizeOrphanRunningTimers();
-      } catch {}
+      try { await normalizeOrphanRunningTimers(); } catch {}
       if (!puzzleOpen) await refreshIndexAndCache({ quiet: true });
     } else {
       if (puzzleOpen) await stopTimerAndSave();
@@ -286,34 +261,23 @@ async function init() {
   });
 
   window.addEventListener("pageshow", async () => {
-    try {
-      await normalizeOrphanRunningTimers();
-    } catch {}
+    try { await normalizeOrphanRunningTimers(); } catch {}
     if (!puzzleOpen) await refreshIndexAndCache({ quiet: true });
   });
 
   window.addEventListener("resize", () => {
     if (current.spec) computeCellSize(current.spec.rows, current.spec.cols);
-    paintSelection(); // outlines depend on geometry
+    paintSelection();
   });
 
-  // Load index → metadata fast
   await refreshIndexAndCache({ quiet: false });
   await renderHome();
   scheduleIndexRefresh();
 
-  // Google
   await initGoogleTokenClient();
-
-  // Restore token on iOS/PWA relaunch (works until token expiry)
   restoreTokenFromStorage();
   updateAccountUI();
-  if (signedIn) {
-    pullProgressFromDrive().catch(() => {});
-  } else if (localStorage.getItem(LS.autoLogin) === "1") {
-    // On many iOS PWAs this needs a user gesture; we DO NOT force a popup here.
-    // But if token is still valid, restoreTokenFromStorage already covered it.
-  }
+  if (signedIn) pullProgressFromDrive().catch(() => {});
 
   homeStatusEl.textContent = "Loaded";
 }
@@ -379,7 +343,6 @@ async function registerServiceWorker() {
   if (!("serviceWorker" in navigator)) return;
   try {
     const reg = await navigator.serviceWorker.register("./sw.js");
-
     if (reg.waiting) reg.waiting.postMessage({ type: "SKIP_WAITING" });
 
     reg.addEventListener("updatefound", () => {
@@ -403,7 +366,7 @@ async function registerServiceWorker() {
 }
 
 /* ===========================
-   GOOGLE LOGIN (GIS token client)
+   GOOGLE LOGIN + TOKEN STORE
 =========================== */
 
 async function initGoogleTokenClient() {
@@ -416,7 +379,7 @@ async function initGoogleTokenClient() {
   tokenClient = window.google.accounts.oauth2.initTokenClient({
     client_id: GOOGLE_CLIENT_ID,
     scope: DRIVE_SCOPE,
-    callback: () => {}, // replaced per-request
+    callback: () => {},
   });
 }
 
@@ -424,9 +387,8 @@ function storeToken(token, expiresInSeconds) {
   accessToken = token;
   signedIn = true;
 
-  // expires_in is typically present; if not, assume 50 minutes
   const ttlMs = (Number(expiresInSeconds) || 3000) * 1000;
-  const exp = Date.now() + ttlMs - 20_000; // safety margin
+  const exp = Date.now() + ttlMs - 20_000;
 
   localStorage.setItem(LS.token, token);
   localStorage.setItem(LS.tokenExp, String(exp));
@@ -447,14 +409,11 @@ function restoreTokenFromStorage() {
     signedIn = true;
     return true;
   }
-  // expired
   accessToken = null;
   signedIn = false;
   return false;
 }
 
-// interactive=true -> prompt consent/login popup
-// interactive=false -> silent token refresh attempt (often requires user gesture on iOS PWA)
 async function loginGoogle(interactive) {
   if (!tokenClient) await initGoogleTokenClient();
   if (!tokenClient) {
@@ -472,7 +431,6 @@ async function loginGoogle(interactive) {
       }
       resolve();
     };
-
     tokenClient.requestAccessToken({ prompt: interactive ? "consent" : "" });
   });
 }
@@ -500,12 +458,8 @@ function updateAccountUI() {
 
 async function ensureValidTokenOrThrow() {
   if (restoreTokenFromStorage()) return;
-
-  // if token expired, try silent refresh; on iOS PWA this may fail without a gesture
   if (localStorage.getItem(LS.autoLogin) !== "1") throw new Error("Not signed in");
-
   await loginGoogle(false);
-
   if (!signedIn || !accessToken) throw new Error("Not signed in");
 }
 
@@ -529,18 +483,13 @@ async function driveRequest(url, opts = {}, retry = true) {
       },
     });
 
-    // token invalid → clear stored token and retry once (may require user gesture on iOS)
     if ((res.status === 401 || res.status === 403) && retry) {
       clearStoredToken();
       accessToken = null;
       signedIn = false;
       updateAccountUI();
-      try {
-        await ensureValidTokenOrThrow();
-        return driveRequest(url, opts, false);
-      } catch {
-        // fallthrough to error
-      }
+      await ensureValidTokenOrThrow();
+      return driveRequest(url, opts, false);
     }
 
     if (!res.ok) {
@@ -632,7 +581,6 @@ async function pullProgressFromDrive() {
 
 async function pushProgressToDrive({ merge } = { merge: true }) {
   if (!signedIn) return;
-
   const fid = await findOrCreateDriveFileId();
 
   let base = { version: 1, updatedAt: Date.now(), progress: {} };
@@ -717,9 +665,7 @@ function scheduleIndexRefresh() {
 =========================== */
 
 async function renderHome() {
-  try {
-    await normalizeOrphanRunningTimers();
-  } catch {}
+  try { await normalizeOrphanRunningTimers(); } catch {}
 
   const puzzles = await idb.getAll("puzzles");
   const progress = await idb.getAll("progress");
@@ -741,13 +687,9 @@ async function renderHome() {
     return { p, snap, isCompleted, timeMs, lastOpenedAt };
   });
 
-  if (sortMode === "recent") {
-    items.sort((a, b) => (b.lastOpenedAt - a.lastOpenedAt) || (a.p.date < b.p.date ? 1 : -1));
-  } else if (sortMode === "oldest") {
-    items.sort((a, b) => (a.p.date < b.p.date ? -1 : 1));
-  } else {
-    items.sort((a, b) => (a.p.date < b.p.date ? 1 : -1));
-  }
+  if (sortMode === "recent") items.sort((a, b) => (b.lastOpenedAt - a.lastOpenedAt) || (a.p.date < b.p.date ? 1 : -1));
+  else if (sortMode === "oldest") items.sort((a, b) => (a.p.date < b.p.date ? -1 : 1));
+  else items.sort((a, b) => (a.p.date < b.p.date ? 1 : -1));
 
   archiveEl.innerHTML = "";
   let shown = 0;
@@ -763,13 +705,9 @@ async function renderHome() {
     if (filterMode === "not_started" && !isNotStarted) continue;
 
     let subtitle = "";
-    if (isCompleted) {
-      subtitle = `Completed • ${fmtTime(timeMs)}`;
-    } else if (isNotStarted) {
-      subtitle = "Not started";
-    } else {
-      subtitle = `In progress • ${fmtTime(timeMs)}`;
-    }
+    if (isCompleted) subtitle = `Completed • ${fmtTime(timeMs)}`;
+    else if (isNotStarted) subtitle = "Not started";
+    else subtitle = `In progress • ${fmtTime(timeMs)}`;
 
     const card = document.createElement("div");
     card.className = "card";
@@ -785,21 +723,15 @@ async function renderHome() {
     const open = async () => openPuzzle(p.psid, p.date);
     card.addEventListener("click", open);
     card.addEventListener("keydown", (e) => {
-      if (e.key === "Enter" || e.key === " ") {
-        e.preventDefault();
-        open();
-      }
+      if (e.key === "Enter" || e.key === " ") { e.preventDefault(); open(); }
     });
 
     archiveEl.appendChild(card);
     shown++;
   }
 
-  if (!puzzles.length) {
-    archiveEl.innerHTML = `<div class="muted">No cached puzzles yet (run the Action backfill once).</div>`;
-  } else if (!shown) {
-    archiveEl.innerHTML = `<div class="muted">No puzzles match this filter.</div>`;
-  }
+  if (!puzzles.length) archiveEl.innerHTML = `<div class="muted">No cached puzzles yet (run the Action backfill once).</div>`;
+  else if (!shown) archiveEl.innerHTML = `<div class="muted">No puzzles match this filter.</div>`;
 }
 
 /* ===========================
@@ -857,13 +789,6 @@ async function openPuzzle(psid, date) {
   current = { key, psid, date, spec, progress, selected: null };
   puzzleOpen = true;
 
-  ensureOutlineEls();
-
-  toggleChecksBtn.setAttribute("aria-pressed", String(!!progress.wordChecks));
-  toggleChecksBtn.textContent = `Word checks: ${progress.wordChecks ? "On" : "Off"}`;
-
-  correctWordIds = new Set();
-
   homeView.classList.add("hidden");
   puzzleView.classList.remove("hidden");
 
@@ -871,16 +796,16 @@ async function openPuzzle(psid, date) {
   showClue(null);
   computeCellSize(spec.rows, spec.cols);
 
+  toggleChecksBtn.setAttribute("aria-pressed", String(!!progress.wordChecks));
+  toggleChecksBtn.textContent = `Word checks: ${progress.wordChecks ? "On" : "Off"}`;
+
+  correctWordIds = new Set();
+  if (progress.wordChecks) { recomputeCorrectWords(); paintOkFromSet(); }
+  else clearAllOk();
+
   setTimeout(() => kbd.focus(), 50);
 
   await startTimerIfOpen(true);
-
-  if (progress.wordChecks) {
-    recomputeCorrectWords();
-    paintOkFromSet();
-  } else {
-    clearAllOk();
-  }
 }
 
 async function exitPuzzle() {
@@ -898,11 +823,9 @@ async function exitPuzzle() {
   puzzleView.classList.add("hidden");
   homeView.classList.remove("hidden");
 
-  try {
-    await normalizeOrphanRunningTimers();
-  } catch {}
-
+  try { await normalizeOrphanRunningTimers(); } catch {}
   await renderHome();
+
   scheduleCloudSync();
 }
 
@@ -977,10 +900,7 @@ async function startTimerIfOpen(ensureVisible = false) {
   if (!current.progress.runningSince) current.progress.runningSince = Date.now();
 
   startClockLoop();
-  if (ensureVisible) {
-    lastPaintedSecond = null;
-    paintTimer();
-  }
+  if (ensureVisible) { lastPaintedSecond = null; paintTimer(); }
 
   await autosave(true);
 }
@@ -1123,12 +1043,13 @@ async function autosave(immediate = false) {
 }
 
 /* ===========================
-   GRID RENDER + SIZING
+   GRID + SELECTION OVERLAYS (FIXED)
 =========================== */
 
 function renderGrid(spec, progress) {
   gridEl.innerHTML = "";
   gridEl.style.gridTemplateColumns = `repeat(${spec.cols}, var(--cell))`;
+  gridEl.style.position = "relative";
 
   for (let i = 0; i < spec.rows * spec.cols; i++) {
     const cell = document.createElement("div");
@@ -1145,28 +1066,44 @@ function renderGrid(spec, progress) {
     gridEl.appendChild(cell);
   }
 
+  // IMPORTANT: overlays were destroyed by innerHTML reset; recreate them now
+  wordOutlineEl = null;
+  cellOutlineEl = null;
+  ensureOutlineEls();
+  hideOutlines();
+
   lastPaintedSecond = null;
   if (puzzleOpen) paintTimer();
 }
 
-function computeCellSize(rows, cols) {
-  const topbarH = 42;
-  const clueH = clueBar.classList.contains("hidden") ? 0 : 30;
+function ensureOutlineEls() {
+  if (wordOutlineEl && cellOutlineEl) return;
 
-  const vpW = Math.floor(window.innerWidth);
-  const vpH = Math.floor(window.innerHeight);
+  wordOutlineEl = document.createElement("div");
+  wordOutlineEl.className = "wordOutline";
+  wordOutlineEl.setAttribute("aria-hidden", "true");
 
-  const availW = vpW - 10;
-  const availH = vpH - topbarH - clueH - 10;
+  cellOutlineEl = document.createElement("div");
+  cellOutlineEl.className = "cellOutline";
+  cellOutlineEl.setAttribute("aria-hidden", "true");
 
-  const cell = Math.max(20, Math.floor(Math.min(availW / cols, availH / rows)));
-  gridEl.style.setProperty("--cell", `${cell}px`);
-  paintSelection();
+  // Append AFTER cells so z-index works reliably
+  gridEl.appendChild(wordOutlineEl);
+  gridEl.appendChild(cellOutlineEl);
 }
 
-/* ===========================
-   SELECTION + CLUE
-=========================== */
+function hideOutlines() {
+  if (wordOutlineEl) wordOutlineEl.style.display = "none";
+  if (cellOutlineEl) cellOutlineEl.style.display = "none";
+}
+
+function getWordChoicesAtCell(cellIndex) {
+  const m = current.spec.cellToWords[cellIndex];
+  const out = [];
+  for (const id of m.a || []) out.push({ wordId: id, dir: "a" });
+  for (const id of m.d || []) out.push({ wordId: id, dir: "d" });
+  return out;
+}
 
 function onCellTap(cellIndex) {
   if (!current.spec || !current.progress) return;
@@ -1197,46 +1134,13 @@ function onCellTap(cellIndex) {
   kbd.focus();
 }
 
-function getWordChoicesAtCell(cellIndex) {
-  const m = current.spec.cellToWords[cellIndex];
-  const out = [];
-  for (const id of m.a || []) out.push({ wordId: id, dir: "a" });
-  for (const id of m.d || []) out.push({ wordId: id, dir: "d" });
-  return out;
-}
-
 function setSelection(sel) {
   current.selected = sel;
   paintSelection();
   showCurrentClue();
 }
 
-function ensureOutlineEls() {
-  if (wordOutlineEl && cellOutlineEl) return;
-
-  wordOutlineEl = document.createElement("div");
-  wordOutlineEl.className = "wordOutline";
-  wordOutlineEl.setAttribute("aria-hidden", "true");
-
-  cellOutlineEl = document.createElement("div");
-  cellOutlineEl.className = "cellOutline";
-  cellOutlineEl.setAttribute("aria-hidden", "true");
-
-  // Ensure grid is positioning context
-  gridEl.style.position = "relative";
-  gridEl.appendChild(wordOutlineEl);
-  gridEl.appendChild(cellOutlineEl);
-
-  hideOutlines();
-}
-
-function hideOutlines() {
-  if (wordOutlineEl) wordOutlineEl.style.display = "none";
-  if (cellOutlineEl) cellOutlineEl.style.display = "none";
-}
-
 function paintSelection() {
-  // clear old per-cell selection class (we still mark selected cell for logic, but visuals via overlay)
   for (const el of gridEl.querySelectorAll(".cell.selected")) el.classList.remove("selected");
 
   if (!current.selected || !current.spec) {
@@ -1246,21 +1150,18 @@ function paintSelection() {
   ensureOutlineEls();
 
   const { cellIndex, wordId } = current.selected;
-
   const selCellEl = gridEl.querySelector(`.cell[data-i="${cellIndex}"]`);
-  if (selCellEl) selCellEl.classList.add("selected"); // used for accessibility/logic
+  if (selCellEl) selCellEl.classList.add("selected");
 
   const w = wordId ? current.spec.wordMap.get(wordId) : null;
-  if (!w || !w.cells?.length) {
+  if (!w || !w.cells?.length || !selCellEl) {
     hideOutlines();
     return;
   }
 
   const gridRect = gridEl.getBoundingClientRect();
 
-  // Word bounds: union of all cell rects in the word
   let minL = Infinity, minT = Infinity, maxR = -Infinity, maxB = -Infinity;
-
   for (const c of w.cells) {
     const el = gridEl.querySelector(`.cell[data-i="${c}"]`);
     if (!el) continue;
@@ -1270,43 +1171,27 @@ function paintSelection() {
     maxR = Math.max(maxR, r.right);
     maxB = Math.max(maxB, r.bottom);
   }
+  if (!isFinite(minL)) { hideOutlines(); return; }
 
-  if (!isFinite(minL)) {
-    hideOutlines();
-    return;
-  }
-
-  // Selected cell bounds
-  const selRect = selCellEl ? selCellEl.getBoundingClientRect() : null;
-
-  // Position overlays relative to grid
-  const pad = 2; // makes the word outline slightly roomier
-  const left = Math.round(minL - gridRect.left - pad);
-  const top = Math.round(minT - gridRect.top - pad);
-  const width = Math.round((maxR - minL) + pad * 2);
-  const height = Math.round((maxB - minT) + pad * 2);
+  const selRect = selCellEl.getBoundingClientRect();
+  const pad = 2;
 
   wordOutlineEl.style.display = "block";
-  wordOutlineEl.style.left = `${left}px`;
-  wordOutlineEl.style.top = `${top}px`;
-  wordOutlineEl.style.width = `${width}px`;
-  wordOutlineEl.style.height = `${height}px`;
+  wordOutlineEl.style.left = `${Math.round(minL - gridRect.left - pad)}px`;
+  wordOutlineEl.style.top = `${Math.round(minT - gridRect.top - pad)}px`;
+  wordOutlineEl.style.width = `${Math.round((maxR - minL) + pad * 2)}px`;
+  wordOutlineEl.style.height = `${Math.round((maxB - minT) + pad * 2)}px`;
 
-  if (selRect) {
-    const cl = Math.round(selRect.left - gridRect.left);
-    const ct = Math.round(selRect.top - gridRect.top);
-    const cw = Math.round(selRect.width);
-    const ch = Math.round(selRect.height);
-
-    cellOutlineEl.style.display = "block";
-    cellOutlineEl.style.left = `${cl}px`;
-    cellOutlineEl.style.top = `${ct}px`;
-    cellOutlineEl.style.width = `${cw}px`;
-    cellOutlineEl.style.height = `${ch}px`;
-  } else {
-    cellOutlineEl.style.display = "none";
-  }
+  cellOutlineEl.style.display = "block";
+  cellOutlineEl.style.left = `${Math.round(selRect.left - gridRect.left)}px`;
+  cellOutlineEl.style.top = `${Math.round(selRect.top - gridRect.top)}px`;
+  cellOutlineEl.style.width = `${Math.round(selRect.width)}px`;
+  cellOutlineEl.style.height = `${Math.round(selRect.height)}px`;
 }
+
+/* ===========================
+   CLUE BAR
+=========================== */
 
 function showCurrentClue() {
   if (!current.selected?.wordId) { showClue(null); return; }
@@ -1327,6 +1212,21 @@ function showClue(text) {
     clueBar.textContent = text;
   }
   if (current.spec) computeCellSize(current.spec.rows, current.spec.cols);
+}
+
+function computeCellSize(rows, cols) {
+  const topbarH = 42;
+  const clueH = clueBar.classList.contains("hidden") ? 0 : 30;
+
+  const vpW = Math.floor(window.innerWidth);
+  const vpH = Math.floor(window.innerHeight);
+
+  const availW = vpW - 10;
+  const availH = vpH - topbarH - clueH - 10;
+
+  const cell = Math.max(20, Math.floor(Math.min(availW / cols, availH / rows)));
+  gridEl.style.setProperty("--cell", `${cell}px`);
+  paintSelection();
 }
 
 /* ===========================
@@ -1378,74 +1278,6 @@ function cellIsVerifiedCorrect(cellIndex) {
 }
 
 /* ===========================
-   KEYBOARD SHORTCUTS
-=========================== */
-
-function anySheetOpen() {
-  return !!document.querySelector(".sheet:not(.hidden)");
-}
-
-function onGlobalKeyDown(e) {
-  if (!puzzleOpen) return;
-
-  if (e.key === "Escape") {
-    e.preventDefault();
-    if (anySheetOpen()) {
-      for (const el of document.querySelectorAll(".sheet")) el.classList.add("hidden");
-      document.body.classList.remove("modalOpen");
-    } else {
-      openSheet("mainMenu");
-    }
-    return;
-  }
-
-  if (anySheetOpen()) return;
-
-  if (e.key === "Enter") {
-    e.preventDefault();
-    if (!current.selected) return;
-    const idx = current.selected.cellIndex;
-    const choices = getWordChoicesAtCell(idx);
-    if (choices.length > 1) {
-      const curId = current.selected.wordId;
-      const next = choices.find((c) => c.wordId !== curId) || choices[0];
-      setSelection({ cellIndex: idx, wordId: next.wordId, dir: next.dir });
-    }
-    return;
-  }
-
-  const arrows = ["ArrowLeft", "ArrowRight", "ArrowUp", "ArrowDown"];
-  if (!arrows.includes(e.key)) return;
-
-  e.preventDefault();
-  if (!current.selected) return;
-
-  const { rows, cols, isBlock } = current.spec;
-  let r = Math.floor(current.selected.cellIndex / cols);
-  let c = current.selected.cellIndex % cols;
-
-  let dr = 0, dc = 0;
-  let wantDir = current.selected.dir;
-
-  if (e.key === "ArrowLeft") { dc = -1; wantDir = "a"; }
-  if (e.key === "ArrowRight") { dc = 1; wantDir = "a"; }
-  if (e.key === "ArrowUp") { dr = -1; wantDir = "d"; }
-  if (e.key === "ArrowDown") { dr = 1; wantDir = "d"; }
-
-  let nr = r + dr, nc = c + dc;
-  while (nr >= 0 && nr < rows && nc >= 0 && nc < cols) {
-    const ni = nr * cols + nc;
-    if (!isBlock[ni]) {
-      const choices = getWordChoicesAtCell(ni);
-      const keep = choices.find((ch) => ch.dir === wantDir) || choices[0];
-      setSelection({ cellIndex: ni, wordId: keep.wordId, dir: keep.dir });
-      return;
-    }
-    nr += dr; nc += dc;
-  }
-}
-
-/* ===========================
    TYPING
 =========================== */
 
@@ -1461,12 +1293,10 @@ async function onKeyDown(e) {
 
   if (/^[a-zA-Z]$/.test(key)) {
     e.preventDefault();
-
     if (current.progress.wordChecks && cellIsVerifiedCorrect(cellIndex)) {
       advanceForward(wordId, cellIndex);
       return;
     }
-
     setCell(cellIndex, key.toUpperCase());
     await autosave();
     advanceForward(wordId, cellIndex);
@@ -1475,22 +1305,18 @@ async function onKeyDown(e) {
 
   if (key === "Backspace") {
     e.preventDefault();
-
     const filledHere = getCell(cellIndex);
 
     if (filledHere && current.progress.wordChecks && cellIsVerifiedCorrect(cellIndex)) {
       moveBackOneCell(wordId, cellIndex, { deletePrev: false });
       return;
     }
-
     if (filledHere) {
       setCell(cellIndex, "");
       await autosave();
       return;
     }
-
     moveBackOneCell(wordId, cellIndex, { deletePrev: true });
-    return;
   }
 }
 
@@ -1525,9 +1351,7 @@ function moveBackOneCell(wordId, cellIndex, opts = { deletePrev: true }) {
   }
 }
 
-function getCell(i) {
-  return (current.progress.fills[i] || "").toUpperCase();
-}
+function getCell(i) { return (current.progress.fills[i] || "").toUpperCase(); }
 
 function setCell(i, v) {
   current.progress.fills[i] = v;
@@ -1538,8 +1362,6 @@ function setCell(i, v) {
     recomputeCorrectWords();
     paintOkFromSet();
   }
-
-  // selection outlines remain stable, but keep them crisp after edits
   paintSelection();
 }
 
@@ -1586,13 +1408,9 @@ async function hintCheckPuzzle() {
     const want = (current.spec.solution[i] || "").toUpperCase();
     if (got !== want) setCell(i, "");
   }
-
   const snap = snapshot(current.spec, current.progress);
-  if (snap.allCorrect) {
-    await completePuzzle();
-    return;
-  }
-  await autosave(true);
+  if (snap.allCorrect) await completePuzzle();
+  else await autosave(true);
 }
 
 function getSelectedWord() {
@@ -1606,7 +1424,6 @@ async function completePuzzle() {
   current.progress.completed = true;
   current.progress.completedAt = Date.now();
   await autosave(true);
-
   congratsBody.textContent = `Solved in ${fmtTime(current.progress.elapsedMs || 0)}`;
   openSheet("congrats");
 }
@@ -1638,6 +1455,24 @@ function closeSheet(id) {
 }
 
 /* ===========================
+   GLOBAL KEYS
+=========================== */
+
+function anySheetOpen() { return !!document.querySelector(".sheet:not(.hidden)"); }
+
+function onGlobalKeyDown(e) {
+  if (!puzzleOpen) return;
+
+  if (e.key === "Escape") {
+    e.preventDefault();
+    if (anySheetOpen()) {
+      for (const el of document.querySelectorAll(".sheet")) el.classList.add("hidden");
+      document.body.classList.remove("modalOpen");
+    } else openSheet("mainMenu");
+  }
+}
+
+/* ===========================
    UTIL
 =========================== */
 
@@ -1645,11 +1480,7 @@ async function fetchJson(url, fetchOpts = {}) {
   const ctrl = new AbortController();
   const t = setTimeout(() => ctrl.abort(), FETCH_TIMEOUT_MS);
   try {
-    const res = await fetch(url, {
-      ...fetchOpts,
-      signal: ctrl.signal,
-      cache: fetchOpts.cache || "no-store",
-    });
+    const res = await fetch(url, { ...fetchOpts, signal: ctrl.signal, cache: fetchOpts.cache || "no-store" });
     if (!res.ok) throw new Error(`HTTP ${res.status}`);
     return await res.json();
   } finally {
@@ -1657,9 +1488,7 @@ async function fetchJson(url, fetchOpts = {}) {
   }
 }
 
-function sleep(ms) {
-  return new Promise((r) => setTimeout(r, ms));
-}
+function sleep(ms) { return new Promise((r) => setTimeout(r, ms)); }
 
 function escapeHtml(s) {
   return String(s)
