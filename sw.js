@@ -1,6 +1,6 @@
-// sw.js — LovCryptic service worker (auto-versioned via /version.json)
+// sw.js — LovCryptic SW (auto-versioned via /version.json commit SHA)
 
-async function getVersion() {
+async function getBuild() {
   try {
     const res = await fetch("./version.json", { cache: "no-store" });
     const js = await res.json();
@@ -10,17 +10,21 @@ async function getVersion() {
   }
 }
 
+async function cacheNameFor(build) {
+  return `lovcryptic-shell-${build}`;
+}
+
 self.addEventListener("install", (event) => {
   event.waitUntil(
     (async () => {
-      const v = await getVersion();
-      const cacheName = `lovcryptic-shell-${v}`;
+      const build = await getBuild();
+      const cacheName = await cacheNameFor(build);
 
       const shell = [
         "./",
         "./index.html",
         "./styles.css",
-        `./app.js?v=${v}`,
+        `./app.js?v=${build}`,
         "./idb.js",
         "./manifest.webmanifest",
         "./puzzles/index.json",
@@ -29,7 +33,6 @@ self.addEventListener("install", (event) => {
 
       const cache = await caches.open(cacheName);
       await cache.addAll(shell.map((u) => new Request(u, { cache: "reload" })));
-
       self.skipWaiting();
     })()
   );
@@ -38,8 +41,9 @@ self.addEventListener("install", (event) => {
 self.addEventListener("activate", (event) => {
   event.waitUntil(
     (async () => {
-      const v = await getVersion();
-      const keep = `lovcryptic-shell-${v}`;
+      const build = await getBuild();
+      const keep = await cacheNameFor(build);
+
       const keys = await caches.keys();
       await Promise.all(keys.map((k) => (k === keep ? null : caches.delete(k))));
       await self.clients.claim();
@@ -55,36 +59,56 @@ self.addEventListener("fetch", (event) => {
   const req = event.request;
   const url = new URL(req.url);
 
+  // Don’t cache cross-origin
   if (url.origin !== self.location.origin) {
     event.respondWith(fetch(req, { cache: "no-store" }));
     return;
   }
 
+  const isNavigate = req.mode === "navigate";
   const isShell =
-    req.mode === "navigate" ||
+    isNavigate ||
     url.pathname.endsWith("/") ||
     url.pathname.endsWith("/index.html") ||
     url.pathname.endsWith("/styles.css") ||
     url.pathname.endsWith("/idb.js") ||
     url.pathname.endsWith("/manifest.webmanifest") ||
-    url.pathname.endsWith("/version.json") ||
-    url.pathname.endsWith("/app.js");
+    url.pathname.endsWith("/version.json");
 
-  // Network-first for shell (stays fresh), cache fallback for offline
-  if (isShell) {
+  // app.js (and any query variants)
+  const isAppJs = url.pathname.endsWith("/app.js");
+
+  // Index / shell: network-first so you pick up new builds quickly
+  if (isShell || isAppJs) {
     event.respondWith(
       (async () => {
         try {
+          // Special case: always fetch app.js as versioned URL, never bare
+          if (isAppJs) {
+            const build = await getBuild();
+            const vurl = new URL(req.url);
+            vurl.searchParams.set("v", build);
+            const fresh = await fetch(vurl.toString(), { cache: "no-store" });
+
+            if (fresh.ok) {
+              const cache = await caches.open(await cacheNameFor(build));
+              cache.put(req, fresh.clone()); // store under bare /app.js request key
+              cache.put(vurl.toString(), fresh.clone()); // also store under versioned URL
+            }
+            return fresh;
+          }
+
           const fresh = await fetch(req, { cache: "no-store" });
-          // store into whatever the current version cache is
-          const v = await getVersion();
-          const cache = await caches.open(`lovcryptic-shell-${v}`);
-          cache.put(req, fresh.clone());
+          if (fresh.ok && req.method === "GET") {
+            const build = await getBuild();
+            const cache = await caches.open(await cacheNameFor(build));
+            cache.put(req, fresh.clone());
+          }
           return fresh;
         } catch {
           const cached = await caches.match(req);
           if (cached) return cached;
-          if (req.mode === "navigate") {
+          if (isNavigate) {
             const fallback = await caches.match("./index.html");
             if (fallback) return fallback;
           }
@@ -95,17 +119,20 @@ self.addEventListener("fetch", (event) => {
     return;
   }
 
-  // puzzle json: cache-first
-  const isPuzzleJson = url.pathname.startsWith("/LovCryptics/puzzles/") || url.pathname.startsWith("/puzzles/");
-  if (isPuzzleJson && url.pathname.endsWith(".json")) {
+  // Puzzle JSON: cache-first (fast offline), fetch if missing
+  const isPuzzleJson =
+    (url.pathname.includes("/puzzles/") && url.pathname.endsWith(".json")) ||
+    url.pathname.endsWith("/puzzles/index.json");
+
+  if (isPuzzleJson) {
     event.respondWith(
       (async () => {
         const cached = await caches.match(req);
         if (cached) return cached;
         const fresh = await fetch(req, { cache: "no-store" });
-        if (fresh && fresh.ok) {
-          const v = await getVersion();
-          const cache = await caches.open(`lovcryptic-shell-${v}`);
+        if (fresh.ok && req.method === "GET") {
+          const build = await getBuild();
+          const cache = await caches.open(await cacheNameFor(build));
           cache.put(req, fresh.clone());
         }
         return fresh;
@@ -114,6 +141,7 @@ self.addEventListener("fetch", (event) => {
     return;
   }
 
+  // Default: cache-first
   event.respondWith(
     (async () => {
       const cached = await caches.match(req);
