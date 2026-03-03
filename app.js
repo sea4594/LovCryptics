@@ -12,11 +12,10 @@ const HARD_SYNC_TIMEOUT_MS = 15000;
 
 // Sync policy
 const BACKGROUND_SYNC_EVERY_MS = 10 * 60 * 1000; // 10 minutes
-const AHEAD_DAYS_PROBE = 3;                      // also probe today..today+3
+const AHEAD_DAYS_PROBE = 3;                      // probe today..today+3
 const ALSO_PROBE_YESTERDAY = true;
 
-// When catching up from newest cached date to now, cap total days per sync pass
-// (keeps the UI responsive even if you haven’t opened the app in a long time).
+// Catch-up from newest cached date to now (day-by-day), cap per pass
 const CATCHUP_MAX_DAYS_PER_PASS = 120;
 
 /* ===========================
@@ -210,6 +209,8 @@ async function init() {
   // Lifecycle: sync on returning to foreground; timer only if puzzleOpen
   document.addEventListener("visibilitychange", async () => {
     if (!document.hidden) {
+      // heal any orphan timers on resume
+      await normalizeOrphanRunningTimers();
       kickSync({ reason: "visibility" });
       if (puzzleOpen) await startTimerIfOpen(true);
     } else {
@@ -218,11 +219,13 @@ async function init() {
   });
 
   window.addEventListener("pageshow", async () => {
+    await normalizeOrphanRunningTimers();
     kickSync({ reason: "pageshow" });
     if (puzzleOpen) await startTimerIfOpen(true);
   });
 
   window.addEventListener("focus", async () => {
+    await normalizeOrphanRunningTimers();
     kickSync({ reason: "focus" });
     if (puzzleOpen) await startTimerIfOpen(true);
   });
@@ -230,6 +233,9 @@ async function init() {
   window.addEventListener("resize", () => {
     if (current.spec) computeCellSize(current.spec.rows, current.spec.cols);
   });
+
+  // CRITICAL: self-heal any "runningSince" left over from crashes/reloads
+  await normalizeOrphanRunningTimers();
 
   await renderHome();
 
@@ -265,7 +271,7 @@ async function registerServiceWorker() {
       window.location.reload();
     });
   } catch {
-    // Optional
+    // optional
   }
 }
 
@@ -300,13 +306,48 @@ function setLastUpdatedNow() {
 }
 
 /* ===========================
+   ORPHAN TIMER HEALING
+=========================== */
+
+async function normalizeOrphanRunningTimers() {
+  // If any puzzle is marked running in storage but that puzzle isn't currently open,
+  // finalize it so it stops accumulating time on the home screen.
+  const all = await idb.getAll("progress");
+  const now = Date.now();
+
+  for (const rec of all) {
+    const p = rec?.progress;
+    if (!p?.runningSince) continue;
+
+    const isCurrentlyOpen = puzzleOpen && current?.key && rec.key === current.key;
+    if (isCurrentlyOpen) continue;
+
+    const delta = now - p.runningSince;
+    if (delta > 0) p.elapsedMs = (p.elapsedMs || 0) + delta;
+
+    p.runningSince = null;
+
+    await idb.put("progress", {
+      ...rec,
+      progress: p,
+      updatedAt: now
+    });
+  }
+}
+
+/* ===========================
    HOME LIST
 =========================== */
 
 async function renderHome() {
+  // extra safety: ensure no background accumulation
+  await normalizeOrphanRunningTimers();
+
   const puzzles = await idb.getAll("puzzles");
   const progress = await idb.getAll("progress");
   const progMap = new Map(progress.map((p) => [p.key, p]));
+
+  const now = Date.now();
 
   const items = puzzles.map(p => {
     const pr = progMap.get(p.key);
@@ -315,7 +356,10 @@ async function renderHome() {
 
     const elapsedMs = pr?.progress?.elapsedMs || 0;
     const runningSince = pr?.progress?.runningSince || null;
-    const timeMs = elapsedMs + (runningSince ? (Date.now() - runningSince) : 0);
+
+    // IMPORTANT: only count runningSince for the currently open puzzle
+    const isThisOpen = puzzleOpen && current?.key && p.key === current.key;
+    const timeMs = elapsedMs + (isThisOpen && runningSince ? (now - runningSince) : 0);
 
     const lastOpenedAt = pr?.progress?.lastOpenedAt || 0;
     return { p, snap, isCompleted, timeMs, lastOpenedAt };
@@ -438,7 +482,7 @@ async function autoSync() {
 
   for (const d of probeDates) await tryCache(psid, d);
 
-  // 2) Now ensure we never miss dates: check every date from newest cached to today (+ahead)
+  // 2) Ensure no missed dates: day-by-day from newest cached to (today + ahead)
   const puzzles = await idb.getAll("puzzles");
   const dates = puzzles.filter(p => p.psid === psid).map(p => p.date).sort();
 
@@ -448,7 +492,6 @@ async function autoSync() {
   const targetEnd = addDays(today, AHEAD_DAYS_PROBE);
 
   if (newest) {
-    // start at next day after newest cached; iterate day-by-day to targetEnd
     let cursor = addDays(newest, 1);
     let steps = 0;
 
@@ -458,7 +501,6 @@ async function autoSync() {
       steps++;
     }
   } else {
-    // no cache at all: try today then walk backwards a bit via the backward probe below
     await tryCache(psid, today);
   }
 
@@ -545,6 +587,11 @@ async function openPuzzle(psid, date) {
   const progress = saved?.progress || freshProgress(spec);
 
   progress.lastOpenedAt = Date.now();
+
+  // Ensure only the currently open puzzle can be "running"
+  // (in case old states linger)
+  progress.runningSince = null;
+
   await writeProgress(key, spec, progress);
 
   current = { key, psid, date, spec, progress, selected: null };
@@ -575,22 +622,25 @@ async function openPuzzle(psid, date) {
 }
 
 async function exitPuzzle() {
-  // CRITICAL: mark puzzle closed first so no focus/pageshow handlers can restart timer
+  // Mark closed first so nothing can restart timer
   puzzleOpen = false;
 
   await stopTimerAndSave();
 
   current = { key:null, psid:PSID_DEFAULT, date:null, spec:null, progress:null, selected:null };
   correctWordIds.clear();
-  stopClockLoop();              // hard stop loop
-  timerEl.textContent = "00:00"; // neutral display when no puzzle
+
+  stopClockLoop();
+  timerEl.textContent = "00:00";
 
   puzzleView.classList.add("hidden");
   homeView.classList.remove("hidden");
 
+  // Heal any orphan running timers system-wide (belt & suspenders)
+  await normalizeOrphanRunningTimers();
+
   await renderHome();
 
-  // refresh cache after returning home
   kickSync({ reason: "return_home" });
 }
 
@@ -613,7 +663,7 @@ async function restartPuzzle() {
 }
 
 /* ===========================
-   TIMER (robust)
+   TIMER
 =========================== */
 
 function getElapsedMs(progress) {
@@ -637,7 +687,7 @@ function startClockLoop() {
 
   const tick = () => {
     if (!clockActive) return;
-    if (!puzzleOpen) return; // safety: never tick when puzzle closed
+    if (!puzzleOpen) return;
     paintTimer();
     clockRaf = requestAnimationFrame(tick);
   };
@@ -686,7 +736,6 @@ async function forceRestartTimer() {
 }
 
 async function stopTimerAndSave() {
-  // stop loop first so UI never looks like it's ticking after exit
   stopClockLoop();
 
   if (!current.key || !current.progress) return;
@@ -988,7 +1037,7 @@ function cellIsVerifiedCorrect(cellIndex) {
 }
 
 /* ===========================
-   TYPING (includes overwrite block for verified words)
+   TYPING (overwrite blocked for verified words)
 =========================== */
 
 async function onKeyDown(e) {
@@ -1004,7 +1053,6 @@ async function onKeyDown(e) {
   if (/^[a-zA-Z]$/.test(key)) {
     e.preventDefault();
 
-    // If checks ON and cell is within any verified-correct word: no overwrite
     if (current.progress.wordChecks && cellIsVerifiedCorrect(cellIndex)) {
       advanceForward(wordId, cellIndex);
       return;
@@ -1021,7 +1069,6 @@ async function onKeyDown(e) {
 
     const filledHere = getCell(cellIndex);
 
-    // If checks ON and verified-correct: do not delete; move back
     if (filledHere && current.progress.wordChecks && cellIsVerifiedCorrect(cellIndex)) {
       moveBackOneCell(wordId, cellIndex, { deletePrev: false });
       return;
