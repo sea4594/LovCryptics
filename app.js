@@ -4,19 +4,22 @@ import * as idb from "./idb.js";
    CONFIG
 =========================== */
 
-const API_BASE = "";
 const PSID_DEFAULT = "100000160";
+
+// Put your Google OAuth Client ID here:
+const GOOGLE_CLIENT_ID = "PASTE_YOUR_CLIENT_ID_HERE.apps.googleusercontent.com";
+
+// Drive scope for appDataFolder storage (hidden app storage)
+const DRIVE_SCOPE = "https://www.googleapis.com/auth/drive.appdata";
 
 const FETCH_TIMEOUT_MS = 8000;
 const HARD_SYNC_TIMEOUT_MS = 15000;
 
-// Sync policy
-const BACKGROUND_SYNC_EVERY_MS = 10 * 60 * 1000; // 10 minutes
-const AHEAD_DAYS_PROBE = 3;                      // probe today..today+3
-const ALSO_PROBE_YESTERDAY = true;
+// Background refresh of puzzles index (lightweight)
+const INDEX_REFRESH_EVERY_MS = 30 * 60 * 1000; // 30 minutes
 
-// Catch-up from newest cached date to now (day-by-day), cap per pass
-const CATCHUP_MAX_DAYS_PER_PASS = 120;
+// Progress file in Drive appDataFolder
+const DRIVE_PROGRESS_FILENAME = "lovcryptic_progress_v1.json";
 
 /* ===========================
    DOM
@@ -44,6 +47,9 @@ const menuBtn = $("#menuBtn");
 
 const homeMenu = $("#homeMenu");
 const homeThemeBtn = $("#homeThemeBtn");
+const loginBtn = $("#loginBtn");
+const logoutBtn = $("#logoutBtn");
+const accountLine = $("#accountLine");
 
 const themeMenu = $("#themeMenu");
 const sortMenu = $("#sortMenu");
@@ -85,18 +91,24 @@ let current = {
 let puzzleOpen = false;
 
 let savePending = null;
+let syncPending = null;
 
-// Verified-correct words (when checks enabled)
+// verified correct words
 let correctWordIds = new Set();
 
-// Sync
-let syncInFlight = false;
-let bgSyncTimer = null;
-
-// Timer loop (RAF)
+// timer loop
 let clockRaf = null;
 let clockActive = false;
 let lastPaintedSecond = null;
+
+// index refresh timer
+let indexTimer = null;
+
+// auth
+let accessToken = null;
+let tokenClient = null;
+let driveFileId = null;
+let signedIn = false;
 
 /* ===========================
    INIT
@@ -109,30 +121,31 @@ async function init() {
 
   applySavedTheme();
   applyLastUpdatedLabel();
+  await normalizeOrphanRunningTimers();
 
   // Home controls
   sortBtn.addEventListener("click", () => openSheet("sortMenu"));
   filterBtn.addEventListener("click", () => openSheet("filterMenu"));
   homeMenuBtn.addEventListener("click", () => openSheet("homeMenu"));
+
   homeThemeBtn.addEventListener("click", () => {
     closeSheet("homeMenu");
     openSheet("themeMenu");
+  });
+
+  loginBtn.addEventListener("click", async () => {
+    await loginGoogle();
+  });
+
+  logoutBtn.addEventListener("click", async () => {
+    logoutGoogle();
   });
 
   // Puzzle controls
   hintBtn.addEventListener("click", () => openSheet("hintMenu"));
   menuBtn.addEventListener("click", () => openSheet("mainMenu"));
 
-  // Home status retry
-  homeStatusEl.addEventListener("click", () => {
-    if (homeStatusEl.dataset.retry === "1") {
-      homeStatusEl.dataset.retry = "0";
-      homeStatusEl.textContent = "Syncing…";
-      kickSync({ reason: "manual" });
-    }
-  });
-
-  // Global click handling (sheets)
+  // Global click handling (sheets + pickers)
   document.body.addEventListener("click", async (e) => {
     const closeId = e.target?.getAttribute?.("data-close");
     if (closeId) closeSheet(closeId);
@@ -177,7 +190,6 @@ async function init() {
 
   toggleChecksBtn.addEventListener("click", async () => {
     if (!current.progress) return;
-
     current.progress.wordChecks = !current.progress.wordChecks;
     toggleChecksBtn.setAttribute("aria-pressed", String(current.progress.wordChecks));
     toggleChecksBtn.textContent = `Word checks: ${current.progress.wordChecks ? "On" : "Off"}`;
@@ -206,13 +218,14 @@ async function init() {
   // Keyboard
   kbd.addEventListener("keydown", onKeyDown);
 
-  // Lifecycle: sync on returning to foreground; timer only if puzzleOpen
+  // Desktop shortcuts (arrows/esc/enter)
+  window.addEventListener("keydown", onGlobalKeyDown);
+
+  // Lifecycle
   document.addEventListener("visibilitychange", async () => {
     if (!document.hidden) {
-      // heal any orphan timers on resume
       await normalizeOrphanRunningTimers();
-      kickSync({ reason: "visibility" });
-      if (puzzleOpen) await startTimerIfOpen(true);
+      if (!puzzleOpen) await refreshIndexAndCache({ quiet: true });
     } else {
       if (puzzleOpen) await stopTimerAndSave();
     }
@@ -220,28 +233,23 @@ async function init() {
 
   window.addEventListener("pageshow", async () => {
     await normalizeOrphanRunningTimers();
-    kickSync({ reason: "pageshow" });
-    if (puzzleOpen) await startTimerIfOpen(true);
-  });
-
-  window.addEventListener("focus", async () => {
-    await normalizeOrphanRunningTimers();
-    kickSync({ reason: "focus" });
-    if (puzzleOpen) await startTimerIfOpen(true);
+    if (!puzzleOpen) await refreshIndexAndCache({ quiet: true });
   });
 
   window.addEventListener("resize", () => {
     if (current.spec) computeCellSize(current.spec.rows, current.spec.cols);
   });
 
-  // CRITICAL: self-heal any "runningSince" left over from crashes/reloads
-  await normalizeOrphanRunningTimers();
+  // Load puzzles index + cache locally
+  await refreshIndexAndCache({ quiet: false });
 
   await renderHome();
 
-  scheduleBackgroundSync();
+  scheduleIndexRefresh();
 
-  kickSync({ reason: "init" });
+  // Prepare GIS token client (script loads async; we retry until available)
+  await initGoogleTokenClient();
+  updateAccountUI();
 }
 
 /* ===========================
@@ -270,69 +278,261 @@ async function registerServiceWorker() {
       window.__lovcryptic_reloaded = true;
       window.location.reload();
     });
-  } catch {
-    // optional
+  } catch {}
+}
+
+/* ===========================
+   GOOGLE LOGIN (GIS token client)
+=========================== */
+
+async function initGoogleTokenClient() {
+  // Wait for google.accounts to exist
+  for (let i = 0; i < 40; i++) {
+    if (window.google?.accounts?.oauth2?.initTokenClient) break;
+    await sleep(150);
+  }
+  if (!window.google?.accounts?.oauth2?.initTokenClient) {
+    // Login won't work until script loads; user can refresh.
+    return;
+  }
+
+  tokenClient = window.google.accounts.oauth2.initTokenClient({
+    client_id: GOOGLE_CLIENT_ID,
+    scope: DRIVE_SCOPE,
+    callback: (resp) => {
+      if (resp?.access_token) {
+        accessToken = resp.access_token;
+        signedIn = true;
+        driveFileId = null;
+        updateAccountUI();
+        // pull progress from Drive into IndexedDB
+        pullProgressFromDrive().catch(() => {});
+      }
+    }
+  });
+}
+
+async function loginGoogle() {
+  if (!tokenClient) await initGoogleTokenClient();
+  if (!tokenClient) {
+    alert("Google login not ready yet. Please refresh and try again.");
+    return;
+  }
+  tokenClient.requestAccessToken({ prompt: "consent" });
+}
+
+function logoutGoogle() {
+  accessToken = null;
+  signedIn = false;
+  driveFileId = null;
+  updateAccountUI();
+}
+
+function updateAccountUI() {
+  if (signedIn) {
+    accountLine.textContent = "Signed in (Google)";
+    loginBtn.classList.add("hidden");
+    logoutBtn.classList.remove("hidden");
+  } else {
+    accountLine.textContent = "Not signed in";
+    loginBtn.classList.remove("hidden");
+    logoutBtn.classList.add("hidden");
   }
 }
 
 /* ===========================
-   THEME
+   DRIVE APPDATA PROGRESS
 =========================== */
 
-function applySavedTheme() {
-  const t = localStorage.getItem("lovcrypticTheme") || "light";
-  setTheme(t, { silent: true });
-}
-function setTheme(theme, opts = {}) {
-  document.body.setAttribute("data-theme", theme);
-  localStorage.setItem("lovcrypticTheme", theme);
-  if (!opts.silent && current.spec) computeCellSize(current.spec.rows, current.spec.cols);
-}
-
-/* ===========================
-   UPDATED LABEL
-=========================== */
-
-function applyLastUpdatedLabel() {
-  const s = localStorage.getItem("lovcrypticLastUpdated");
-  if (s) homeStatusEl.textContent = `Updated ${s}`;
-}
-
-function setLastUpdatedNow() {
-  const d = new Date();
-  const stamp = `${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,"0")}-${String(d.getDate()).padStart(2,"0")} ${String(d.getHours()).padStart(2,"0")}:${String(d.getMinutes()).padStart(2,"0")}`;
-  localStorage.setItem("lovcrypticLastUpdated", stamp);
-  homeStatusEl.textContent = `Updated ${stamp}`;
+async function driveRequest(url, opts = {}) {
+  if (!accessToken) throw new Error("Not signed in");
+  const ctrl = new AbortController();
+  const t = setTimeout(() => ctrl.abort(), 15000);
+  try {
+    const res = await fetch(url, {
+      ...opts,
+      signal: ctrl.signal,
+      headers: {
+        ...(opts.headers || {}),
+        Authorization: `Bearer ${accessToken}`
+      }
+    });
+    if (!res.ok) {
+      const txt = await res.text().catch(() => "");
+      throw new Error(`Drive HTTP ${res.status}: ${txt}`);
+    }
+    return res;
+  } finally {
+    clearTimeout(t);
+  }
 }
 
-/* ===========================
-   ORPHAN TIMER HEALING
-=========================== */
+async function findOrCreateDriveFileId() {
+  if (driveFileId) return driveFileId;
 
-async function normalizeOrphanRunningTimers() {
-  // If any puzzle is marked running in storage but that puzzle isn't currently open,
-  // finalize it so it stops accumulating time on the home screen.
-  const all = await idb.getAll("progress");
+  // Search appDataFolder for our file
+  const q = encodeURIComponent(`name='${DRIVE_PROGRESS_FILENAME}' and trashed=false`);
+  const url = `https://www.googleapis.com/drive/v3/files?spaces=appDataFolder&q=${q}&fields=files(id,name,modifiedTime)`;
+  const res = await driveRequest(url);
+  const js = await res.json();
+  const file = js.files?.[0];
+  if (file?.id) {
+    driveFileId = file.id;
+    return driveFileId;
+  }
+
+  // Create file in appDataFolder
+  const meta = { name: DRIVE_PROGRESS_FILENAME, parents: ["appDataFolder"] };
+  const boundary = "-------314159265358979323846";
+  const body =
+    `--${boundary}\r\n` +
+    `Content-Type: application/json; charset=UTF-8\r\n\r\n` +
+    `${JSON.stringify(meta)}\r\n` +
+    `--${boundary}\r\n` +
+    `Content-Type: application/json; charset=UTF-8\r\n\r\n` +
+    `${JSON.stringify({ version: 1, updatedAt: Date.now(), progress: {} })}\r\n` +
+    `--${boundary}--`;
+
+  const createRes = await driveRequest(
+    "https://www.googleapis.com/upload/drive/v3/files?uploadType=multipart&fields=id",
+    {
+      method: "POST",
+      headers: { "Content-Type": `multipart/related; boundary=${boundary}` },
+      body
+    }
+  );
+  const created = await createRes.json();
+  driveFileId = created.id;
+  return driveFileId;
+}
+
+async function pullProgressFromDrive() {
+  const fid = await findOrCreateDriveFileId();
+
+  const res = await driveRequest(`https://www.googleapis.com/drive/v3/files/${fid}?alt=media`);
+  const cloud = await res.json().catch(() => ({ version: 1, progress: {} }));
+  const cloudMap = cloud?.progress || {};
+
+  // Merge into local IndexedDB progress store
+  const localAll = await idb.getAll("progress");
+  const localMap = new Map(localAll.map(r => [r.key, r]));
+
   const now = Date.now();
 
-  for (const rec of all) {
-    const p = rec?.progress;
-    if (!p?.runningSince) continue;
-
-    const isCurrentlyOpen = puzzleOpen && current?.key && rec.key === current.key;
-    if (isCurrentlyOpen) continue;
-
-    const delta = now - p.runningSince;
-    if (delta > 0) p.elapsedMs = (p.elapsedMs || 0) + delta;
-
-    p.runningSince = null;
-
-    await idb.put("progress", {
-      ...rec,
-      progress: p,
-      updatedAt: now
-    });
+  for (const [key, cloudRec] of Object.entries(cloudMap)) {
+    const localRec = localMap.get(key);
+    if (!localRec) {
+      await idb.put("progress", { key, updatedAt: cloudRec.updatedAt || now, progress: cloudRec.progress, snap: cloudRec.snap || null });
+      continue;
+    }
+    // pick whichever is newer
+    const lc = localRec.updatedAt || 0;
+    const cc = cloudRec.updatedAt || 0;
+    if (cc > lc) {
+      await idb.put("progress", { key, updatedAt: cc, progress: cloudRec.progress, snap: cloudRec.snap || localRec.snap || null });
+    }
   }
+
+  // Also push any local entries cloud doesn't have
+  await pushProgressToDrive({ merge: true });
+  await renderHome();
+}
+
+async function pushProgressToDrive({ merge } = { merge: true }) {
+  if (!accessToken) return;
+
+  const fid = await findOrCreateDriveFileId();
+
+  let base = { version: 1, updatedAt: Date.now(), progress: {} };
+
+  if (merge) {
+    try {
+      const res = await driveRequest(`https://www.googleapis.com/drive/v3/files/${fid}?alt=media`);
+      base = await res.json();
+      if (!base || typeof base !== "object") base = { version: 1, updatedAt: Date.now(), progress: {} };
+      if (!base.progress) base.progress = {};
+    } catch {
+      // ignore, we'll overwrite
+    }
+  }
+
+  const localAll = await idb.getAll("progress");
+  for (const rec of localAll) {
+    base.progress[rec.key] = {
+      updatedAt: rec.updatedAt || Date.now(),
+      progress: rec.progress,
+      snap: rec.snap || null
+    };
+  }
+  base.updatedAt = Date.now();
+
+  // Update file content (media upload)
+  await driveRequest(
+    `https://www.googleapis.com/upload/drive/v3/files/${fid}?uploadType=media`,
+    {
+      method: "PATCH",
+      headers: { "Content-Type": "application/json; charset=UTF-8" },
+      body: JSON.stringify(base)
+    }
+  );
+}
+
+function scheduleCloudSync() {
+  if (!signedIn) return;
+  if (syncPending) clearTimeout(syncPending);
+  syncPending = setTimeout(() => {
+    pushProgressToDrive({ merge: true }).catch(() => {});
+    syncPending = null;
+  }, 1200);
+}
+
+/* ===========================
+   PUZZLES: STATIC INDEX + LOCAL CACHE
+=========================== */
+
+async function refreshIndexAndCache({ quiet }) {
+  try {
+    if (!quiet) homeStatusEl.textContent = "Loading puzzles…";
+
+    const idx = await fetchJson("./puzzles/index.json", { cache: "no-store" });
+    const dates = Array.isArray(idx?.dates) ? idx.dates : [];
+    const psid = String(idx?.psid || PSID_DEFAULT);
+
+    // Store puzzle records (metadata) into IDB "puzzles" without pulling all JSON into memory
+    // We also fetch missing puzzle json files and store their raw data in IDB (for offline parsing).
+    const existing = await idb.getAll("puzzles");
+    const existingKeys = new Set(existing.map(p => p.key));
+
+    // Fetch missing dates (but don’t stall forever)
+    for (const d of dates) {
+      const key = `${psid}|${d}`;
+      if (existingKeys.has(key)) continue;
+
+      const url = `./puzzles/${psid}/${d}.json`;
+      const data = await fetchJson(url, { cache: "no-store" });
+
+      await idb.put("puzzles", { key, psid, date: d, fetchedAt: Date.now(), data });
+    }
+
+    // If we have puzzles but no status stamp, show updated
+    applyLastUpdatedLabel();
+    if (!localStorage.getItem("lovcrypticLastUpdated")) {
+      homeStatusEl.textContent = "Loaded";
+    }
+  } catch {
+    const s = localStorage.getItem("lovcrypticLastUpdated");
+    homeStatusEl.textContent = s ? `Updated ${s} (offline)` : "Offline";
+  }
+}
+
+function scheduleIndexRefresh() {
+  if (indexTimer) clearInterval(indexTimer);
+  indexTimer = setInterval(async () => {
+    const onHome = !homeView.classList.contains("hidden");
+    if (!onHome || document.hidden) return;
+    await refreshIndexAndCache({ quiet: true });
+    await renderHome();
+  }, INDEX_REFRESH_EVERY_MS);
 }
 
 /* ===========================
@@ -340,7 +540,6 @@ async function normalizeOrphanRunningTimers() {
 =========================== */
 
 async function renderHome() {
-  // extra safety: ensure no background accumulation
   await normalizeOrphanRunningTimers();
 
   const puzzles = await idb.getAll("puzzles");
@@ -357,7 +556,6 @@ async function renderHome() {
     const elapsedMs = pr?.progress?.elapsedMs || 0;
     const runningSince = pr?.progress?.runningSince || null;
 
-    // IMPORTANT: only count runningSince for the currently open puzzle
     const isThisOpen = puzzleOpen && current?.key && p.key === current.key;
     const timeMs = elapsedMs + (isThisOpen && runningSince ? (now - runningSince) : 0);
 
@@ -412,159 +610,32 @@ async function renderHome() {
   }
 
   if (!puzzles.length) {
-    archiveEl.innerHTML = `<div class="muted">No cached puzzles yet. Sync will populate automatically.</div>`;
+    archiveEl.innerHTML = `<div class="muted">No cached puzzles yet (run the Action backfill once).</div>`;
   } else if (!shown) {
     archiveEl.innerHTML = `<div class="muted">No puzzles match this filter.</div>`;
   }
 }
 
 /* ===========================
-   BACKGROUND SYNC (home only)
+   ORPHAN TIMER HEALING
 =========================== */
 
-function scheduleBackgroundSync() {
-  if (bgSyncTimer) clearInterval(bgSyncTimer);
+async function normalizeOrphanRunningTimers() {
+  const all = await idb.getAll("progress");
+  const now = Date.now();
 
-  bgSyncTimer = setInterval(() => {
-    const onHome = !homeView.classList.contains("hidden");
-    if (!onHome) return;
-    if (document.hidden) return;
-    kickSync({ reason: "interval" });
-  }, BACKGROUND_SYNC_EVERY_MS);
-}
+  for (const rec of all) {
+    const p = rec?.progress;
+    if (!p?.runningSince) continue;
 
-/* ===========================
-   SYNC
-=========================== */
+    const isCurrentlyOpen = puzzleOpen && current?.key && rec.key === current.key;
+    if (isCurrentlyOpen) continue;
 
-function withTimeout(promise, ms) {
-  return new Promise((resolve, reject) => {
-    const t = setTimeout(() => reject(new Error("timeout")), ms);
-    promise.then((v) => { clearTimeout(t); resolve(v); })
-           .catch((e) => { clearTimeout(t); reject(e); });
-  });
-}
+    const delta = now - p.runningSince;
+    if (delta > 0) p.elapsedMs = (p.elapsedMs || 0) + delta;
+    p.runningSince = null;
 
-function kickSync({ reason } = {}) {
-  const onHome = !homeView.classList.contains("hidden");
-  if (!onHome) return;
-
-  if (syncInFlight) return;
-  syncInFlight = true;
-
-  homeStatusEl.textContent = "Syncing…";
-  homeStatusEl.dataset.retry = "0";
-
-  withTimeout(autoSync(), HARD_SYNC_TIMEOUT_MS)
-    .then(async () => {
-      setLastUpdatedNow();
-      await renderHome();
-    })
-    .catch(async () => {
-      const s = localStorage.getItem("lovcrypticLastUpdated");
-      homeStatusEl.textContent = s ? `Updated ${s} (offline)` : "Sync failed — tap to retry";
-      homeStatusEl.dataset.retry = "1";
-      await renderHome();
-    })
-    .finally(() => { syncInFlight = false; });
-}
-
-async function autoSync() {
-  const psid = PSID_DEFAULT;
-
-  // 1) Always probe around today for “release window”
-  const today = isoDate(new Date());
-  const probeDates = new Set();
-
-  if (ALSO_PROBE_YESTERDAY) probeDates.add(addDays(today, -1));
-  probeDates.add(today);
-  for (let k = 1; k <= AHEAD_DAYS_PROBE; k++) probeDates.add(addDays(today, k));
-
-  for (const d of probeDates) await tryCache(psid, d);
-
-  // 2) Ensure no missed dates: day-by-day from newest cached to (today + ahead)
-  const puzzles = await idb.getAll("puzzles");
-  const dates = puzzles.filter(p => p.psid === psid).map(p => p.date).sort();
-
-  const newest = dates.length ? dates[dates.length - 1] : null;
-  const oldest = dates.length ? dates[0] : null;
-
-  const targetEnd = addDays(today, AHEAD_DAYS_PROBE);
-
-  if (newest) {
-    let cursor = addDays(newest, 1);
-    let steps = 0;
-
-    while (cursor <= targetEnd && steps < CATCHUP_MAX_DAYS_PER_PASS) {
-      await tryCache(psid, cursor);
-      cursor = addDays(cursor, 1);
-      steps++;
-    }
-  } else {
-    await tryCache(psid, today);
-  }
-
-  // 3) Backward probe for older puzzles (incremental)
-  const state = loadSyncState();
-  let backCursor = state.backCursor || addDays(oldest || today, -1);
-  let failStreak = state.failStreak || 0;
-
-  const backwardCap = 10;
-  for (let i = 0; i < backwardCap; i++) {
-    if (failStreak >= 21) break;
-    const ok = await tryCache(psid, backCursor);
-    failStreak = ok ? 0 : (failStreak + 1);
-    backCursor = addDays(backCursor, -1);
-  }
-
-  saveSyncState({ backCursor, failStreak });
-}
-
-function loadSyncState() {
-  try { return JSON.parse(localStorage.getItem("lovcrypticSyncState") || "{}"); }
-  catch { return {}; }
-}
-function saveSyncState(s) {
-  localStorage.setItem("lovcrypticSyncState", JSON.stringify(s));
-}
-
-async function tryCache(psid, date) {
-  const key = `${psid}|${date}`;
-  const existing = await idb.get("puzzles", key);
-  if (existing) return true;
-
-  try {
-    const url = `https://data.puzzlexperts.com/puzzleapp-v3/data.php?psid=${encodeURIComponent(psid)}&date=${encodeURIComponent(date)}`;
-    const data = await fetchJson(url);
-    if (!data?.cells?.[0]?.meta?.data) return false;
-
-    await idb.put("puzzles", { key, psid, date, fetchedAt: Date.now(), data });
-
-    const spec = parsePuzzle(data);
-    const progress = freshProgress(spec);
-    await writeProgress(key, spec, progress);
-
-    return true;
-  } catch {
-    return false;
-  }
-}
-
-async function fetchJson(url) {
-  const fetchUrl = API_BASE ? `${API_BASE}${encodeURIComponent(url)}` : url;
-  const ctrl = new AbortController();
-  const t = setTimeout(() => ctrl.abort(), FETCH_TIMEOUT_MS);
-  try {
-    const resp = await fetch(fetchUrl, {
-      cache: "no-store",
-      signal: ctrl.signal,
-      headers: { "Cache-Control": "no-store", "Pragma": "no-cache" }
-    });
-    if (!resp.ok) throw new Error(`HTTP ${resp.status}`);
-    const txt = await resp.text();
-    return JSON.parse(txt);
-  } finally {
-    clearTimeout(t);
+    await idb.put("progress", { ...rec, progress: p, updatedAt: now });
   }
 }
 
@@ -577,9 +648,12 @@ async function openPuzzle(psid, date) {
 
   let puzzleRec = await idb.get("puzzles", key);
   if (!puzzleRec) {
-    const ok = await tryCache(psid, date);
-    if (!ok) return;
+    // If the index says it exists, it should be in repo. Try direct fetch and cache.
+    const url = `./puzzles/${psid}/${date}.json`;
+    const data = await fetchJson(url, { cache: "no-store" });
+    await idb.put("puzzles", { key, psid, date, fetchedAt: Date.now(), data });
     puzzleRec = await idb.get("puzzles", key);
+    if (!puzzleRec) return;
   }
 
   const spec = parsePuzzle(puzzleRec.data);
@@ -587,11 +661,7 @@ async function openPuzzle(psid, date) {
   const progress = saved?.progress || freshProgress(spec);
 
   progress.lastOpenedAt = Date.now();
-
-  // Ensure only the currently open puzzle can be "running"
-  // (in case old states linger)
-  progress.runningSince = null;
-
+  progress.runningSince = null; // ensure clean start
   await writeProgress(key, spec, progress);
 
   current = { key, psid, date, spec, progress, selected: null };
@@ -622,9 +692,7 @@ async function openPuzzle(psid, date) {
 }
 
 async function exitPuzzle() {
-  // Mark closed first so nothing can restart timer
   puzzleOpen = false;
-
   await stopTimerAndSave();
 
   current = { key:null, psid:PSID_DEFAULT, date:null, spec:null, progress:null, selected:null };
@@ -636,12 +704,11 @@ async function exitPuzzle() {
   puzzleView.classList.add("hidden");
   homeView.classList.remove("hidden");
 
-  // Heal any orphan running timers system-wide (belt & suspenders)
   await normalizeOrphanRunningTimers();
-
   await renderHome();
 
-  kickSync({ reason: "return_home" });
+  // push progress if logged in
+  scheduleCloudSync();
 }
 
 async function restartPuzzle() {
@@ -713,17 +780,13 @@ async function startTimerIfOpen(ensureVisible = false) {
   if (!current.progress.runningSince) current.progress.runningSince = Date.now();
 
   startClockLoop();
-  if (ensureVisible) {
-    lastPaintedSecond = null;
-    paintTimer();
-  }
+  if (ensureVisible) { lastPaintedSecond = null; paintTimer(); }
 
   await autosave(true);
 }
 
 async function forceRestartTimer() {
   stopClockLoop();
-
   if (!current.progress) return;
 
   current.progress.elapsedMs = 0;
@@ -737,7 +800,6 @@ async function forceRestartTimer() {
 
 async function stopTimerAndSave() {
   stopClockLoop();
-
   if (!current.key || !current.progress) return;
 
   if (current.progress.runningSince) {
@@ -855,6 +917,7 @@ async function autosave(immediate = false) {
   savePending = setTimeout(async () => {
     savePending = null;
     await writeProgress(current.key, current.spec, current.progress);
+    scheduleCloudSync();
   }, delay);
 }
 
@@ -1037,6 +1100,80 @@ function cellIsVerifiedCorrect(cellIndex) {
 }
 
 /* ===========================
+   KEYBOARD SHORTCUTS (desktop)
+=========================== */
+
+function anySheetOpen() {
+  return !!document.querySelector(".sheet:not(.hidden)");
+}
+
+function onGlobalKeyDown(e) {
+  if (!puzzleOpen) return;
+
+  // Esc opens menu popup
+  if (e.key === "Escape") {
+    e.preventDefault();
+    if (anySheetOpen()) {
+      // close topmost: easiest close all
+      for (const el of document.querySelectorAll(".sheet")) el.classList.add("hidden");
+      document.body.classList.remove("modalOpen");
+    } else {
+      openSheet("mainMenu");
+    }
+    return;
+  }
+
+  if (anySheetOpen()) return;
+
+  // Enter toggles word at intersections
+  if (e.key === "Enter") {
+    e.preventDefault();
+    if (!current.selected) return;
+    const idx = current.selected.cellIndex;
+    const choices = getWordChoicesAtCell(idx);
+    if (choices.length > 1) {
+      const curId = current.selected.wordId;
+      const next = choices.find(c => c.wordId !== curId) || choices[0];
+      setSelection({ cellIndex: idx, wordId: next.wordId, dir: next.dir });
+    }
+    return;
+  }
+
+  // Arrow navigation
+  const arrows = ["ArrowLeft","ArrowRight","ArrowUp","ArrowDown"];
+  if (!arrows.includes(e.key)) return;
+
+  e.preventDefault();
+  if (!current.selected) return;
+
+  const { rows, cols, isBlock } = current.spec;
+  let r = Math.floor(current.selected.cellIndex / cols);
+  let c = current.selected.cellIndex % cols;
+
+  let dr = 0, dc = 0;
+  let wantDir = current.selected.dir;
+
+  if (e.key === "ArrowLeft") { dc = -1; wantDir = "a"; }
+  if (e.key === "ArrowRight") { dc = 1; wantDir = "a"; }
+  if (e.key === "ArrowUp") { dr = -1; wantDir = "d"; }
+  if (e.key === "ArrowDown") { dr = 1; wantDir = "d"; }
+
+  // step to next non-block (stop at edges)
+  let nr = r + dr, nc = c + dc;
+  while (nr >= 0 && nr < rows && nc >= 0 && nc < cols) {
+    const ni = nr * cols + nc;
+    if (!isBlock[ni]) {
+      // pick word in desired direction if possible
+      const choices = getWordChoicesAtCell(ni);
+      const keep = choices.find(ch => ch.dir === wantDir) || choices[0];
+      setSelection({ cellIndex: ni, wordId: keep.wordId, dir: keep.dir });
+      return;
+    }
+    nr += dr; nc += dc;
+  }
+}
+
+/* ===========================
    TYPING (overwrite blocked for verified words)
 =========================== */
 
@@ -1053,6 +1190,7 @@ async function onKeyDown(e) {
   if (/^[a-zA-Z]$/.test(key)) {
     e.preventDefault();
 
+    // no overwrite for verified-correct
     if (current.progress.wordChecks && cellIsVerifiedCorrect(cellIndex)) {
       advanceForward(wordId, cellIndex);
       return;
@@ -1069,6 +1207,7 @@ async function onKeyDown(e) {
 
     const filledHere = getCell(cellIndex);
 
+    // do not delete verified-correct
     if (filledHere && current.progress.wordChecks && cellIsVerifiedCorrect(cellIndex)) {
       moveBackOneCell(wordId, cellIndex, { deletePrev: false });
       return;
@@ -1226,21 +1365,218 @@ function closeSheet(id) {
 }
 
 /* ===========================
-   UTILS
+   TIMER
 =========================== */
 
-function isoDate(d) {
-  return new Date(d.getTime() - d.getTimezoneOffset() * 60000).toISOString().slice(0, 10);
+function getElapsedMs(progress) {
+  const base = progress.elapsedMs || 0;
+  return progress.runningSince ? base + (Date.now() - progress.runningSince) : base;
 }
 
-function addDays(iso, delta) {
-  const d = new Date(`${iso}T00:00:00`);
-  d.setDate(d.getDate() + delta);
-  return isoDate(d);
+function paintTimer() {
+  if (!current.progress) return;
+  const ms = getElapsedMs(current.progress);
+  const s = Math.floor(ms / 1000);
+  if (s === lastPaintedSecond) return;
+  lastPaintedSecond = s;
+  timerEl.textContent = fmtTime(ms);
 }
 
-function escapeHtml(s) {
-  return String(s).replace(/[&<>"']/g, (c) => ({
-    "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#039;"
-  }[c]));
+function startClockLoop() {
+  if (clockActive) return;
+  clockActive = true;
+  lastPaintedSecond = null;
+
+  const tick = () => {
+    if (!clockActive) return;
+    if (!puzzleOpen) return;
+    paintTimer();
+    clockRaf = requestAnimationFrame(tick);
+  };
+  clockRaf = requestAnimationFrame(tick);
+}
+
+function stopClockLoop() {
+  clockActive = false;
+  if (clockRaf) cancelAnimationFrame(clockRaf);
+  clockRaf = null;
+}
+
+async function startTimerIfOpen(ensureVisible = false) {
+  if (!puzzleOpen) return;
+  if (!current.key || !current.progress) return;
+
+  if (current.progress.completed) {
+    stopClockLoop();
+    paintTimer();
+    return;
+  }
+
+  if (!current.progress.runningSince) current.progress.runningSince = Date.now();
+
+  startClockLoop();
+  if (ensureVisible) { lastPaintedSecond = null; paintTimer(); }
+
+  await autosave(true);
+}
+
+async function forceRestartTimer() {
+  stopClockLoop();
+  if (!current.progress) return;
+
+  current.progress.elapsedMs = 0;
+  current.progress.runningSince = Date.now();
+
+  timerEl.textContent = "00:00";
+  lastPaintedSecond = null;
+
+  if (puzzleOpen) startClockLoop();
+}
+
+async function stopTimerAndSave() {
+  stopClockLoop();
+  if (!current.key || !current.progress) return;
+
+  if (current.progress.runningSince) {
+    const now = Date.now();
+    current.progress.elapsedMs = (current.progress.elapsedMs || 0) + (now - current.progress.runningSince);
+    current.progress.runningSince = null;
+  }
+
+  lastPaintedSecond = null;
+  paintTimer();
+  await autosave(true);
+}
+
+function fmtTime(ms) {
+  const s = Math.floor(ms / 1000);
+  const mm = String(Math.floor(s / 60)).padStart(2, "0");
+  const ss = String(s % 60).padStart(2, "0");
+  return `${mm}:${ss}`;
+}
+
+/* ===========================
+   SAVE / EXIT / RESTART
+=========================== */
+
+async function exitPuzzle() {
+  puzzleOpen = false;
+  await stopTimerAndSave();
+
+  current = { key:null, psid:PSID_DEFAULT, date:null, spec:null, progress:null, selected:null };
+  correctWordIds.clear();
+
+  stopClockLoop();
+  timerEl.textContent = "00:00";
+
+  puzzleView.classList.add("hidden");
+  homeView.classList.remove("hidden");
+
+  await normalizeOrphanRunningTimers();
+  await renderHome();
+
+  scheduleCloudSync();
+}
+
+async function restartPuzzle() {
+  if (!current.spec) return;
+
+  correctWordIds.clear();
+  clearAllGreen();
+
+  current.progress = freshProgress(current.spec);
+  current.progress.lastOpenedAt = Date.now();
+  current.selected = null;
+
+  renderGrid(current.spec, current.progress);
+  showClue(null);
+  computeCellSize(current.spec.rows, current.spec.cols);
+
+  await forceRestartTimer();
+  await autosave(true);
+}
+
+/* ===========================
+   ORPHAN TIMER HEALING
+=========================== */
+
+async function normalizeOrphanRunningTimers() {
+  const all = await idb.getAll("progress");
+  const now = Date.now();
+
+  for (const rec of all) {
+    const p = rec?.progress;
+    if (!p?.runningSince) continue;
+
+    const isCurrentlyOpen = puzzleOpen && current?.key && rec.key === current.key;
+    if (isCurrentlyOpen) continue;
+
+    const delta = now - p.runningSince;
+    if (delta > 0) p.elapsedMs = (p.elapsedMs || 0) + delta;
+    p.runningSince = null;
+
+    await idb.put("progress", { ...rec, progress: p, updatedAt: now });
+  }
+}
+
+/* ===========================
+   PROGRESS STRUCTURES
+=========================== */
+
+function freshProgress(spec) {
+  return {
+    fills: Array.from({ length: spec.rows * spec.cols }, () => ""),
+    elapsedMs: 0,
+    runningSince: null,
+    wordChecks: false,
+    completed: false,
+    completedAt: null,
+    lastOpenedAt: 0
+  };
+}
+
+async function writeProgress(key, spec, progress) {
+  const snap = snapshot(spec, progress);
+  await idb.put("progress", { key, updatedAt: Date.now(), progress, snap });
+}
+
+function snapshot(spec, progress) {
+  let total = 0, filled = 0, correctFilled = 0;
+  for (let i = 0; i < spec.solution.length; i++) {
+    if (spec.isBlock[i]) continue;
+    total++;
+    const got = (progress.fills[i] || "").toUpperCase();
+    if (got) {
+      filled++;
+      const want = (spec.solution[i] || "").toUpperCase();
+      if (got === want) correctFilled++;
+    }
+  }
+  const pct = total ? Math.round((filled / total) * 100) : 0;
+  const allCorrect = (filled === total) && (correctFilled === total);
+  return { total, filled, pct, allCorrect };
+}
+
+/* ===========================
+   UTIL: fetchJson
+=========================== */
+
+async function fetchJson(url, fetchOpts = {}) {
+  const ctrl = new AbortController();
+  const t = setTimeout(() => ctrl.abort(), FETCH_TIMEOUT_MS);
+  try {
+    const res = await fetch(url, {
+      ...fetchOpts,
+      signal: ctrl.signal,
+      cache: fetchOpts.cache || "no-store"
+    });
+    if (!res.ok) throw new Error(`HTTP ${res.status}`);
+    return await res.json();
+  } finally {
+    clearTimeout(t);
+  }
+}
+
+function sleep(ms) {
+  return new Promise(r => setTimeout(r, ms));
 }
