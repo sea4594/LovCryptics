@@ -6,7 +6,7 @@
   <meta name="theme-color" content="#f4f6ff" />
   <link rel="manifest" href="manifest.webmanifest" />
   <link rel="stylesheet" href="styles.css" />
-  <title>LovCryptic</title>
+  <title>LovCryptics</title>
 
   <!-- Google Identity Services -->
   <script src="https://accounts.google.com/gsi/client" async defer></script>
@@ -18,7 +18,7 @@
       <div class="homeLeft">
         <button id="homeMenuBtn" class="chip iconChip" aria-label="Menu">☰</button>
         <div class="homeTitle">
-          <h1>LovCryptic</h1>
+          <h1>LovCryptics</h1>
           <div id="homeStatus" class="muted">Loading…</div>
         </div>
       </div>
@@ -35,7 +35,7 @@
   <!-- PUZZLE VIEW -->
   <main id="puzzleView" class="view hidden">
     <div class="topbar">
-      <div class="brandMini">LovCryptic</div>
+      <div class="brandMini">LovCryptics</div>
       <div class="timer" id="timer">00:00</div>
       <div class="topbarRight">
         <button id="hintBtn" class="iconBtn" aria-label="Hints">Hint</button>
@@ -69,13 +69,24 @@
   <div id="themeMenu" class="sheet hidden" role="dialog" aria-modal="true">
     <div class="sheetCard">
       <div class="sheetTitle">Theme</div>
-      <button class="sheetItem" data-theme="light">light</button>
-      <button class="sheetItem" data-theme="dark">dark</button>
+
+      <div class="themeSwitchRow">
+        <div class="themeSwitchLabel">Mode</div>
+        <label class="themeSwitch">
+          <input id="themeModeToggle" type="checkbox" />
+          <span class="themeSwitchPill" aria-hidden="true"></span>
+        </label>
+        <div id="themeModeLabel" class="themeSwitchValue">Light</div>
+      </div>
+
       <div class="sheetDivider"></div>
-      <button class="sheetItem" data-theme="sage">sage</button>
-      <button class="sheetItem" data-theme="lavender">lavender</button>
-      <button class="sheetItem" data-theme="ocean">ocean</button>
-      <button class="sheetItem" data-theme="sand">sand</button>
+
+      <button class="sheetItem" data-theme-base="blackwhite">Black &amp; White</button>
+      <button class="sheetItem" data-theme-base="sage">Sage</button>
+      <button class="sheetItem" data-theme-base="lavender">Lavender</button>
+      <button class="sheetItem" data-theme-base="ocean">Ocean</button>
+      <button class="sheetItem" data-theme-base="sand">Sand</button>
+
       <button class="sheetCancel" data-close="themeMenu">Cancel</button>
     </div>
   </div>
@@ -120,7 +131,7 @@
   <!-- PUZZLE MENU -->
   <div id="mainMenu" class="sheet hidden" role="dialog" aria-modal="true">
     <div class="sheetCard">
-      <div class="sheetTitle brandTitle">LovCryptic</div>
+      <div class="sheetTitle brandTitle">LovCryptics</div>
       <button class="sheetItem" id="saveExitBtn">Exit to menu</button>
       <button class="sheetItem danger" id="restartBtn">Restart</button>
       <button class="sheetCancel" data-close="mainMenu">Cancel</button>
