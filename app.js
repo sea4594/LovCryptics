@@ -15,6 +15,8 @@ const FETCH_TIMEOUT_MS = 8000;
 const INDEX_REFRESH_EVERY_MS = 30 * 60 * 1000;
 
 const DRIVE_PROGRESS_FILENAME = "lovcryptics_progress_v1.json";
+
+// < 10s should be treated as "Not started"
 const STARTED_THRESHOLD_MS = 10_000;
 
 const LS = {
@@ -104,12 +106,15 @@ let puzzleOpen = false;
 let savePending = null;
 let syncPending = null;
 
+// verified correct words
 let correctWordIds = new Set();
 
+// timer loop
 let clockRaf = null;
 let clockActive = false;
 let lastPaintedSecond = null;
 
+// index refresh timer
 let indexTimer = null;
 
 // auth
@@ -172,12 +177,14 @@ async function init() {
   menuBtn.addEventListener("click", () => openSheet("mainMenu"));
 
   // Themes inside puzzle menu
-  puzzleThemeBtn.addEventListener("click", () => {
-    closeSheet("mainMenu");
-    openSheet("themeMenu");
-  });
+  if (puzzleThemeBtn) {
+    puzzleThemeBtn.addEventListener("click", () => {
+      closeSheet("mainMenu");
+      openSheet("themeMenu");
+    });
+  }
 
-  // Global click handling
+  // Global click handling (sheets + pickers)
   document.body.addEventListener("click", async (e) => {
     const closeId = e.target?.getAttribute?.("data-close");
     if (closeId) closeSheet(closeId);
@@ -217,10 +224,22 @@ async function init() {
   });
 
   // Hints + checks
-  revealLetterBtn.addEventListener("click", async () => { closeSheet("hintMenu"); await hintRevealLetter(); });
-  revealWordBtn.addEventListener("click", async () => { closeSheet("hintMenu"); await hintRevealWord(); });
-  checkWordBtn.addEventListener("click", async () => { closeSheet("hintMenu"); await hintCheckWord(); });
-  checkPuzzleBtn.addEventListener("click", async () => { closeSheet("hintMenu"); await hintCheckPuzzle(); });
+  revealLetterBtn.addEventListener("click", async () => {
+    closeSheet("hintMenu");
+    await hintRevealLetter();
+  });
+  revealWordBtn.addEventListener("click", async () => {
+    closeSheet("hintMenu");
+    await hintRevealWord();
+  });
+  checkWordBtn.addEventListener("click", async () => {
+    closeSheet("hintMenu");
+    await hintCheckWord();
+  });
+  checkPuzzleBtn.addEventListener("click", async () => {
+    closeSheet("hintMenu");
+    await hintCheckPuzzle();
+  });
 
   toggleChecksBtn.addEventListener("click", async () => {
     if (!current.progress) return;
@@ -239,12 +258,24 @@ async function init() {
   });
 
   // Menu actions
-  saveExitBtn.addEventListener("click", async () => { closeSheet("mainMenu"); await exitPuzzle(); });
+  saveExitBtn.addEventListener("click", async () => {
+    closeSheet("mainMenu");
+    await exitPuzzle();
+  });
 
-  restartBtn.addEventListener("click", () => { closeSheet("mainMenu"); openSheet("restartConfirm"); });
-  restartYesBtn.addEventListener("click", async () => { closeSheet("restartConfirm"); await restartPuzzle(); });
+  restartBtn.addEventListener("click", () => {
+    closeSheet("mainMenu");
+    openSheet("restartConfirm");
+  });
+  restartYesBtn.addEventListener("click", async () => {
+    closeSheet("restartConfirm");
+    await restartPuzzle();
+  });
 
-  congratsExitBtn.addEventListener("click", async () => { closeSheet("congrats"); await exitPuzzle(); });
+  congratsExitBtn.addEventListener("click", async () => {
+    closeSheet("congrats");
+    await exitPuzzle();
+  });
 
   // Keyboard
   kbd.addEventListener("keydown", onKeyDown);
@@ -253,7 +284,9 @@ async function init() {
   // Lifecycle
   document.addEventListener("visibilitychange", async () => {
     if (!document.hidden) {
-      try { await normalizeOrphanRunningTimers(); } catch {}
+      try {
+        await normalizeOrphanRunningTimers();
+      } catch {}
       if (!puzzleOpen) await refreshIndexAndCache({ quiet: true });
     } else {
       if (puzzleOpen) await stopTimerAndSave();
@@ -261,7 +294,9 @@ async function init() {
   });
 
   window.addEventListener("pageshow", async () => {
-    try { await normalizeOrphanRunningTimers(); } catch {}
+    try {
+      await normalizeOrphanRunningTimers();
+    } catch {}
     if (!puzzleOpen) await refreshIndexAndCache({ quiet: true });
   });
 
@@ -270,10 +305,12 @@ async function init() {
     paintSelection();
   });
 
+  // Load index + render
   await refreshIndexAndCache({ quiet: false });
   await renderHome();
   scheduleIndexRefresh();
 
+  // Google
   await initGoogleTokenClient();
   restoreTokenFromStorage();
   updateAccountUI();
@@ -510,8 +547,8 @@ async function findOrCreateDriveFileId() {
 
   const res = await driveRequest(url);
   const js = await res.json();
-
   const file = js.files?.[0];
+
   if (file?.id) {
     driveFileId = file.id;
     return driveFileId;
@@ -665,7 +702,9 @@ function scheduleIndexRefresh() {
 =========================== */
 
 async function renderHome() {
-  try { await normalizeOrphanRunningTimers(); } catch {}
+  try {
+    await normalizeOrphanRunningTimers();
+  } catch {}
 
   const puzzles = await idb.getAll("puzzles");
   const progress = await idb.getAll("progress");
@@ -687,9 +726,13 @@ async function renderHome() {
     return { p, snap, isCompleted, timeMs, lastOpenedAt };
   });
 
-  if (sortMode === "recent") items.sort((a, b) => (b.lastOpenedAt - a.lastOpenedAt) || (a.p.date < b.p.date ? 1 : -1));
-  else if (sortMode === "oldest") items.sort((a, b) => (a.p.date < b.p.date ? -1 : 1));
-  else items.sort((a, b) => (a.p.date < b.p.date ? 1 : -1));
+  if (sortMode === "recent") {
+    items.sort((a, b) => (b.lastOpenedAt - a.lastOpenedAt) || (a.p.date < b.p.date ? 1 : -1));
+  } else if (sortMode === "oldest") {
+    items.sort((a, b) => (a.p.date < b.p.date ? -1 : 1));
+  } else {
+    items.sort((a, b) => (a.p.date < b.p.date ? 1 : -1));
+  }
 
   archiveEl.innerHTML = "";
   let shown = 0;
@@ -723,15 +766,21 @@ async function renderHome() {
     const open = async () => openPuzzle(p.psid, p.date);
     card.addEventListener("click", open);
     card.addEventListener("keydown", (e) => {
-      if (e.key === "Enter" || e.key === " ") { e.preventDefault(); open(); }
+      if (e.key === "Enter" || e.key === " ") {
+        e.preventDefault();
+        open();
+      }
     });
 
     archiveEl.appendChild(card);
     shown++;
   }
 
-  if (!puzzles.length) archiveEl.innerHTML = `<div class="muted">No cached puzzles yet (run the Action backfill once).</div>`;
-  else if (!shown) archiveEl.innerHTML = `<div class="muted">No puzzles match this filter.</div>`;
+  if (!puzzles.length) {
+    archiveEl.innerHTML = `<div class="muted">No cached puzzles yet (run the Action backfill once).</div>`;
+  } else if (!shown) {
+    archiveEl.innerHTML = `<div class="muted">No puzzles match this filter.</div>`;
+  }
 }
 
 /* ===========================
@@ -800,8 +849,12 @@ async function openPuzzle(psid, date) {
   toggleChecksBtn.textContent = `Word checks: ${progress.wordChecks ? "On" : "Off"}`;
 
   correctWordIds = new Set();
-  if (progress.wordChecks) { recomputeCorrectWords(); paintOkFromSet(); }
-  else clearAllOk();
+  if (progress.wordChecks) {
+    recomputeCorrectWords();
+    paintOkFromSet();
+  } else {
+    clearAllOk();
+  }
 
   setTimeout(() => kbd.focus(), 50);
 
@@ -823,9 +876,11 @@ async function exitPuzzle() {
   puzzleView.classList.add("hidden");
   homeView.classList.remove("hidden");
 
-  try { await normalizeOrphanRunningTimers(); } catch {}
-  await renderHome();
+  try {
+    await normalizeOrphanRunningTimers();
+  } catch {}
 
+  await renderHome();
   scheduleCloudSync();
 }
 
@@ -900,7 +955,10 @@ async function startTimerIfOpen(ensureVisible = false) {
   if (!current.progress.runningSince) current.progress.runningSince = Date.now();
 
   startClockLoop();
-  if (ensureVisible) { lastPaintedSecond = null; paintTimer(); }
+  if (ensureVisible) {
+    lastPaintedSecond = null;
+    paintTimer();
+  }
 
   await autosave(true);
 }
@@ -924,8 +982,7 @@ async function stopTimerAndSave() {
 
   if (current.progress.runningSince) {
     const now = Date.now();
-    current.progress.elapsedMs =
-      (current.progress.elapsedMs || 0) + (now - current.progress.runningSince);
+    current.progress.elapsedMs = (current.progress.elapsedMs || 0) + (now - current.progress.runningSince);
     current.progress.runningSince = null;
   }
 
@@ -1043,7 +1100,7 @@ async function autosave(immediate = false) {
 }
 
 /* ===========================
-   GRID + SELECTION OVERLAYS (FIXED)
+   GRID + SELECTION OVERLAYS
 =========================== */
 
 function renderGrid(spec, progress) {
@@ -1066,7 +1123,7 @@ function renderGrid(spec, progress) {
     gridEl.appendChild(cell);
   }
 
-  // IMPORTANT: overlays were destroyed by innerHTML reset; recreate them now
+  // overlays are destroyed by innerHTML reset; recreate
   wordOutlineEl = null;
   cellOutlineEl = null;
   ensureOutlineEls();
@@ -1087,7 +1144,6 @@ function ensureOutlineEls() {
   cellOutlineEl.className = "cellOutline";
   cellOutlineEl.setAttribute("aria-hidden", "true");
 
-  // Append AFTER cells so z-index works reliably
   gridEl.appendChild(wordOutlineEl);
   gridEl.appendChild(cellOutlineEl);
 }
@@ -1171,10 +1227,13 @@ function paintSelection() {
     maxR = Math.max(maxR, r.right);
     maxB = Math.max(maxB, r.bottom);
   }
-  if (!isFinite(minL)) { hideOutlines(); return; }
+  if (!isFinite(minL)) {
+    hideOutlines();
+    return;
+  }
 
   const selRect = selCellEl.getBoundingClientRect();
-  const pad = 2;
+  const pad = 1; // <<< smaller than before (was 2)
 
   wordOutlineEl.style.display = "block";
   wordOutlineEl.style.left = `${Math.round(minL - gridRect.left - pad)}px`;
@@ -1190,7 +1249,7 @@ function paintSelection() {
 }
 
 /* ===========================
-   CLUE BAR
+   CLUE BAR + CELL SIZE
 =========================== */
 
 function showCurrentClue() {
@@ -1311,11 +1370,13 @@ async function onKeyDown(e) {
       moveBackOneCell(wordId, cellIndex, { deletePrev: false });
       return;
     }
+
     if (filledHere) {
       setCell(cellIndex, "");
       await autosave();
       return;
     }
+
     moveBackOneCell(wordId, cellIndex, { deletePrev: true });
   }
 }
@@ -1351,7 +1412,9 @@ function moveBackOneCell(wordId, cellIndex, opts = { deletePrev: true }) {
   }
 }
 
-function getCell(i) { return (current.progress.fills[i] || "").toUpperCase(); }
+function getCell(i) {
+  return (current.progress.fills[i] || "").toUpperCase();
+}
 
 function setCell(i, v) {
   current.progress.fills[i] = v;
@@ -1408,6 +1471,7 @@ async function hintCheckPuzzle() {
     const want = (current.spec.solution[i] || "").toUpperCase();
     if (got !== want) setCell(i, "");
   }
+
   const snap = snapshot(current.spec, current.progress);
   if (snap.allCorrect) await completePuzzle();
   else await autosave(true);
@@ -1454,21 +1518,76 @@ function closeSheet(id) {
   if (!anyOpen) document.body.classList.remove("modalOpen");
 }
 
-/* ===========================
-   GLOBAL KEYS
-=========================== */
+function anySheetOpen() {
+  return !!document.querySelector(".sheet:not(.hidden)");
+}
 
-function anySheetOpen() { return !!document.querySelector(".sheet:not(.hidden)"); }
+/* ===========================
+   GLOBAL KEYS (RESTORED)
+=========================== */
 
 function onGlobalKeyDown(e) {
   if (!puzzleOpen) return;
 
+  // Esc: open/close menu popup
   if (e.key === "Escape") {
     e.preventDefault();
     if (anySheetOpen()) {
       for (const el of document.querySelectorAll(".sheet")) el.classList.add("hidden");
       document.body.classList.remove("modalOpen");
-    } else openSheet("mainMenu");
+    } else {
+      openSheet("mainMenu");
+    }
+    return;
+  }
+
+  // If any sheet open, ignore
+  if (anySheetOpen()) return;
+
+  // Enter toggles across/down at intersections
+  if (e.key === "Enter") {
+    e.preventDefault();
+    if (!current.selected) return;
+    const idx = current.selected.cellIndex;
+    const choices = getWordChoicesAtCell(idx);
+    if (choices.length > 1) {
+      const curId = current.selected.wordId;
+      const next = choices.find((c) => c.wordId !== curId) || choices[0];
+      setSelection({ cellIndex: idx, wordId: next.wordId, dir: next.dir });
+    }
+    return;
+  }
+
+  const arrows = ["ArrowLeft", "ArrowRight", "ArrowUp", "ArrowDown"];
+  if (!arrows.includes(e.key)) return;
+
+  e.preventDefault();
+  if (!current.selected || !current.spec) return;
+
+  const { rows, cols, isBlock } = current.spec;
+  let r = Math.floor(current.selected.cellIndex / cols);
+  let c = current.selected.cellIndex % cols;
+
+  let dr = 0, dc = 0;
+  let wantDir = current.selected.dir;
+
+  if (e.key === "ArrowLeft")  { dc = -1; wantDir = "a"; }
+  if (e.key === "ArrowRight") { dc =  1; wantDir = "a"; }
+  if (e.key === "ArrowUp")    { dr = -1; wantDir = "d"; }
+  if (e.key === "ArrowDown")  { dr =  1; wantDir = "d"; }
+
+  // step to next non-block cell
+  let nr = r + dr, nc = c + dc;
+  while (nr >= 0 && nr < rows && nc >= 0 && nc < cols) {
+    const ni = nr * cols + nc;
+    if (!isBlock[ni]) {
+      const choices = getWordChoicesAtCell(ni);
+      const keep = choices.find((ch) => ch.dir === wantDir) || choices[0];
+      setSelection({ cellIndex: ni, wordId: keep.wordId, dir: keep.dir });
+      return;
+    }
+    nr += dr;
+    nc += dc;
   }
 }
 
@@ -1480,7 +1599,11 @@ async function fetchJson(url, fetchOpts = {}) {
   const ctrl = new AbortController();
   const t = setTimeout(() => ctrl.abort(), FETCH_TIMEOUT_MS);
   try {
-    const res = await fetch(url, { ...fetchOpts, signal: ctrl.signal, cache: fetchOpts.cache || "no-store" });
+    const res = await fetch(url, {
+      ...fetchOpts,
+      signal: ctrl.signal,
+      cache: fetchOpts.cache || "no-store",
+    });
     if (!res.ok) throw new Error(`HTTP ${res.status}`);
     return await res.json();
   } finally {
@@ -1488,7 +1611,9 @@ async function fetchJson(url, fetchOpts = {}) {
   }
 }
 
-function sleep(ms) { return new Promise((r) => setTimeout(r, ms)); }
+function sleep(ms) {
+  return new Promise((r) => setTimeout(r, ms));
+}
 
 function escapeHtml(s) {
   return String(s)
