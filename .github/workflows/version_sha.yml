@@ -1,0 +1,33 @@
+name: Update version.json with commit SHA
+
+on:
+  push:
+    branches: [ "main" ]
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  stamp:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Write commit SHA to version.json
+        run: |
+          echo "{ \"build\": \"${GITHUB_SHA}\" }" > version.json
+          cat version.json
+
+      - name: Commit version.json (if changed)
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "github-actions[bot]@users.noreply.github.com"
+          git add version.json
+          if git diff --cached --quiet; then
+            echo "No changes."
+          else
+            git commit -m "chore: stamp version.json"
+            git push
+          fi
