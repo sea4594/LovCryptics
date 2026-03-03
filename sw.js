@@ -1,8 +1,3 @@
-/* sw.js — LovCryptic
-   Guarantees updates propagate on GitHub Pages (network-first app shell),
-   avoids caching cross-origin JSON, and activates immediately.
-*/
-
 const CACHE_NAME = "lovcryptic-shell-v1";
 
 const APP_SHELL = [
@@ -12,12 +7,12 @@ const APP_SHELL = [
   "./app.js",
   "./idb.js",
   "./manifest.webmanifest",
+  "./puzzles/index.json",
 ];
 
 self.addEventListener("install", (event) => {
   event.waitUntil((async () => {
     const cache = await caches.open(CACHE_NAME);
-    // cache:reload forces fresh fetches during install
     await cache.addAll(APP_SHELL.map((u) => new Request(u, { cache: "reload" })));
     self.skipWaiting();
   })());
@@ -25,7 +20,6 @@ self.addEventListener("install", (event) => {
 
 self.addEventListener("activate", (event) => {
   event.waitUntil((async () => {
-    // Purge older caches
     const keys = await caches.keys();
     await Promise.all(keys.map((k) => (k === CACHE_NAME ? null : caches.delete(k))));
     await self.clients.claim();
@@ -40,11 +34,14 @@ self.addEventListener("fetch", (event) => {
   const req = event.request;
   const url = new URL(req.url);
 
-  // Never cache cross-origin (puzzle JSON)
+  // Never cache cross-origin
   if (url.origin !== self.location.origin) {
     event.respondWith(fetch(req, { cache: "no-store" }));
     return;
   }
+
+  const isPuzzleJson = url.pathname.startsWith("/puzzles/") && url.pathname.endsWith(".json");
+  const isIndexJson = url.pathname.endsWith("/puzzles/index.json");
 
   const isShell =
     req.mode === "navigate" ||
@@ -55,12 +52,11 @@ self.addEventListener("fetch", (event) => {
     url.pathname.endsWith("/idb.js") ||
     url.pathname.endsWith("/manifest.webmanifest");
 
-  // App shell: NETWORK-FIRST so GitHub deploys show immediately
-  if (isShell) {
+  // App shell: network-first
+  if (isShell || isIndexJson) {
     event.respondWith((async () => {
       try {
         const fresh = await fetch(req, { cache: "no-store" });
-
         if (req.method === "GET" && fresh && fresh.ok) {
           const cache = await caches.open(CACHE_NAME);
           cache.put(req, fresh.clone());
@@ -69,22 +65,35 @@ self.addEventListener("fetch", (event) => {
       } catch {
         const cached = await caches.match(req);
         if (cached) return cached;
-
         if (req.mode === "navigate") {
           const fallback = await caches.match("./index.html");
           if (fallback) return fallback;
         }
-        return new Response("Offline", { status: 503, statusText: "Offline" });
+        return new Response("Offline", { status: 503 });
       }
     })());
     return;
   }
 
-  // Other same-origin assets: cache-first
+  // Puzzle JSON: cache-first (permanent until repo updates)
+  if (isPuzzleJson) {
+    event.respondWith((async () => {
+      const cached = await caches.match(req);
+      if (cached) return cached;
+      const fresh = await fetch(req, { cache: "no-store" });
+      if (fresh && fresh.ok) {
+        const cache = await caches.open(CACHE_NAME);
+        cache.put(req, fresh.clone());
+      }
+      return fresh;
+    })());
+    return;
+  }
+
+  // Other same-origin: cache-first
   event.respondWith((async () => {
     const cached = await caches.match(req);
     if (cached) return cached;
-
     const fresh = await fetch(req);
     if (req.method === "GET" && fresh && fresh.ok) {
       const cache = await caches.open(CACHE_NAME);
