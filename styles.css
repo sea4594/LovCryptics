@@ -3,14 +3,17 @@
 
   --bg:#f1f4ff;
   --panel:#ffffff;
-  --line:rgba(20,20,40,.16);
+
+  /* stronger borders for desktop light theme */
+  --line:rgba(20,20,40,.28);
+  --grid-line:rgba(20,20,40,.26);
+
   --text:rgba(14,14,22,.96);
   --muted:rgba(14,14,22,.62);
 
   --cell-bg:rgba(255,255,255,.94);
   --cell-text:rgba(14,14,22,.95);
   --block-bg:rgba(0,0,0,.24);
-  --grid-line:rgba(20,20,40,.20);
 
   --sel:rgba(0,110,255,.95);
   --word:rgba(0,110,255,.18);
@@ -29,14 +32,14 @@ body[data-theme="dark"]{
 
   --bg:#0e0f14;
   --panel:rgba(255,255,255,.07);
-  --line:rgba(255,255,255,.18);
+  --line:rgba(255,255,255,.20);
+  --grid-line:rgba(255,255,255,.20);
   --text:rgba(255,255,255,.94);
   --muted:rgba(255,255,255,.68);
 
   --cell-bg:rgba(255,255,255,.10);
   --cell-text:rgba(255,255,255,.95);
   --block-bg:rgba(255,255,255,.30);
-  --grid-line:rgba(255,255,255,.20);
 
   --sel:rgba(140,190,255,.98);
   --word:rgba(140,190,255,.26);
@@ -48,90 +51,46 @@ body[data-theme="dark"]{
 
 body[data-theme="sage"]{
   color-scheme: light;
-
-  --bg:#e6f3ec;
-  --panel:#ffffff;
-  --line:rgba(18,42,30,.20);
-  --text:rgba(10,20,15,.96);
-  --muted:rgba(10,20,15,.62);
-
-  --cell-bg:rgba(255,255,255,.94);
-  --cell-text:rgba(10,20,15,.95);
+  --bg:#e6f3ec; --panel:#fff;
+  --line:rgba(18,42,30,.24); --grid-line:rgba(18,42,30,.24);
+  --text:rgba(10,20,15,.96); --muted:rgba(10,20,15,.62);
+  --cell-bg:rgba(255,255,255,.94); --cell-text:rgba(10,20,15,.95);
   --block-bg:rgba(10,20,15,.26);
-  --grid-line:rgba(18,42,30,.24);
-
-  --sel:rgba(16,140,88,.96);
-  --word:rgba(16,140,88,.22);
-  --word-ok:rgba(0,170,95,.28);
-
-  --sheet-dim:rgba(0,0,0,.22);
-  --sheet-bg:rgba(255,255,255,.99);
+  --sel:rgba(16,140,88,.96); --word:rgba(16,140,88,.22); --word-ok:rgba(0,170,95,.28);
+  --sheet-dim:rgba(0,0,0,.22); --sheet-bg:rgba(255,255,255,.99);
 }
 
 body[data-theme="lavender"]{
   color-scheme: light;
-
-  --bg:#eee8ff;
-  --panel:#ffffff;
-  --line:rgba(48,26,86,.20);
-  --text:rgba(26,16,48,.96);
-  --muted:rgba(26,16,48,.62);
-
-  --cell-bg:rgba(255,255,255,.94);
-  --cell-text:rgba(26,16,48,.95);
+  --bg:#eee8ff; --panel:#fff;
+  --line:rgba(48,26,86,.24); --grid-line:rgba(48,26,86,.24);
+  --text:rgba(26,16,48,.96); --muted:rgba(26,16,48,.62);
+  --cell-bg:rgba(255,255,255,.94); --cell-text:rgba(26,16,48,.95);
   --block-bg:rgba(26,16,48,.24);
-  --grid-line:rgba(48,26,86,.24);
-
-  --sel:rgba(108,72,235,.96);
-  --word:rgba(108,72,235,.22);
-  --word-ok:rgba(0,170,95,.26);
-
-  --sheet-dim:rgba(0,0,0,.22);
-  --sheet-bg:rgba(255,255,255,.99);
+  --sel:rgba(108,72,235,.96); --word:rgba(108,72,235,.22); --word-ok:rgba(0,170,95,.26);
+  --sheet-dim:rgba(0,0,0,.22); --sheet-bg:rgba(255,255,255,.99);
 }
 
 body[data-theme="ocean"]{
   color-scheme: light;
-
-  --bg:#e3f2ff;
-  --panel:#ffffff;
-  --line:rgba(10,50,85,.20);
-  --text:rgba(10,25,45,.96);
-  --muted:rgba(10,25,45,.62);
-
-  --cell-bg:rgba(255,255,255,.94);
-  --cell-text:rgba(10,25,45,.95);
+  --bg:#e3f2ff; --panel:#fff;
+  --line:rgba(10,50,85,.24); --grid-line:rgba(10,50,85,.24);
+  --text:rgba(10,25,45,.96); --muted:rgba(10,25,45,.62);
+  --cell-bg:rgba(255,255,255,.94); --cell-text:rgba(10,25,45,.95);
   --block-bg:rgba(10,25,45,.24);
-  --grid-line:rgba(10,50,85,.24);
-
-  --sel:rgba(0,120,195,.96);
-  --word:rgba(0,120,195,.22);
-  --word-ok:rgba(0,170,95,.26);
-
-  --sheet-dim:rgba(0,0,0,.22);
-  --sheet-bg:rgba(255,255,255,.99);
+  --sel:rgba(0,120,195,.96); --word:rgba(0,120,195,.22); --word-ok:rgba(0,170,95,.26);
+  --sheet-dim:rgba(0,0,0,.22); --sheet-bg:rgba(255,255,255,.99);
 }
 
 body[data-theme="sand"]{
   color-scheme: light;
-
-  --bg:#ffedd3;
-  --panel:#ffffff;
-  --line:rgba(78,54,20,.20);
-  --text:rgba(38,25,10,.96);
-  --muted:rgba(38,25,10,.62);
-
-  --cell-bg:rgba(255,255,255,.94);
-  --cell-text:rgba(38,25,10,.95);
+  --bg:#ffedd3; --panel:#fff;
+  --line:rgba(78,54,20,.24); --grid-line:rgba(78,54,20,.24);
+  --text:rgba(38,25,10,.96); --muted:rgba(38,25,10,.62);
+  --cell-bg:rgba(255,255,255,.94); --cell-text:rgba(38,25,10,.95);
   --block-bg:rgba(38,25,10,.28);
-  --grid-line:rgba(78,54,20,.24);
-
-  --sel:rgba(210,120,35,.96);
-  --word:rgba(210,120,35,.22);
-  --word-ok:rgba(0,170,95,.26);
-
-  --sheet-dim:rgba(0,0,0,.22);
-  --sheet-bg:rgba(255,255,255,.99);
+  --sel:rgba(210,120,35,.96); --word:rgba(210,120,35,.22); --word-ok:rgba(0,170,95,.26);
+  --sheet-dim:rgba(0,0,0,.22); --sheet-bg:rgba(255,255,255,.99);
 }
 
 *{box-sizing:border-box;}
@@ -177,7 +136,6 @@ h1{margin:0;font-size:20px;letter-spacing:.2px;}
   display:grid;
   gap:10px;
   padding-right:4px;
-
   align-content:start;
   grid-auto-rows:max-content;
 }
@@ -191,7 +149,6 @@ h1{margin:0;font-size:20px;letter-spacing:.2px;}
   grid-template-columns:1fr auto;
   gap:10px;
   align-items:center;
-
   height:var(--card-h);
   cursor:pointer;
   user-select:none;
@@ -217,11 +174,9 @@ h1{margin:0;font-size:20px;letter-spacing:.2px;}
   border-bottom:1px solid var(--line);
   background:var(--panel);
 }
-
 .brandMini{font-weight:900;letter-spacing:.7px;opacity:.92;}
 .timer{justify-self:center;font-variant-numeric:tabular-nums;font-weight:900;letter-spacing:.6px;}
 .topbarRight{display:flex;gap:8px;align-items:center;}
-
 .iconBtn{
   border:1px solid var(--line);
   background:transparent;
@@ -277,7 +232,6 @@ h1{margin:0;font-size:20px;letter-spacing:.2px;}
 .cell.block{background:var(--block-bg);color:transparent;}
 .cell.wordOk{ background:var(--word-ok); }
 .cell.word{ background:var(--word); }
-
 .cell.selected{
   outline:2px solid var(--sel);
   outline-offset:-2px;
@@ -286,14 +240,15 @@ body.modalOpen .cell.selected{ outline:none; }
 
 .kbd{position:absolute;left:-9999px;top:-9999px;width:1px;height:1px;opacity:0;}
 
-/* Sheets */
+/* Sheets: TOP (not bottom) */
 .sheet{
   position:fixed;
   inset:0;
   background:var(--sheet-dim);
   display:grid;
-  place-items:end center;
+  place-items:start center;
   padding:12px;
+  padding-top:calc(12px + env(safe-area-inset-top));
   padding-bottom:calc(12px + env(safe-area-inset-bottom));
   z-index:9999;
 }
