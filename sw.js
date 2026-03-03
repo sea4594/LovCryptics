@@ -1,23 +1,35 @@
-// sw.js — LovCryptic service worker
-// Bump VERSION on every deploy that changes any cached asset.
-const VERSION = "2026-03-03a";
-const CACHE_NAME = `lovcryptic-shell-${VERSION}`;
+// sw.js — LovCryptic service worker (auto-versioned via /version.json)
 
-const APP_SHELL = [
-  "./",
-  "./index.html",
-  "./styles.css",
-  `./app.js?v=${VERSION}`,
-  "./idb.js",
-  "./manifest.webmanifest",
-  "./puzzles/index.json",
-];
+async function getVersion() {
+  try {
+    const res = await fetch("./version.json", { cache: "no-store" });
+    const js = await res.json();
+    return String(js?.build || "dev");
+  } catch {
+    return "dev";
+  }
+}
 
 self.addEventListener("install", (event) => {
   event.waitUntil(
     (async () => {
-      const cache = await caches.open(CACHE_NAME);
-      await cache.addAll(APP_SHELL.map((u) => new Request(u, { cache: "reload" })));
+      const v = await getVersion();
+      const cacheName = `lovcryptic-shell-${v}`;
+
+      const shell = [
+        "./",
+        "./index.html",
+        "./styles.css",
+        `./app.js?v=${v}`,
+        "./idb.js",
+        "./manifest.webmanifest",
+        "./puzzles/index.json",
+        "./version.json",
+      ];
+
+      const cache = await caches.open(cacheName);
+      await cache.addAll(shell.map((u) => new Request(u, { cache: "reload" })));
+
       self.skipWaiting();
     })()
   );
@@ -26,8 +38,10 @@ self.addEventListener("install", (event) => {
 self.addEventListener("activate", (event) => {
   event.waitUntil(
     (async () => {
+      const v = await getVersion();
+      const keep = `lovcryptic-shell-${v}`;
       const keys = await caches.keys();
-      await Promise.all(keys.map((k) => (k === CACHE_NAME ? null : caches.delete(k))));
+      await Promise.all(keys.map((k) => (k === keep ? null : caches.delete(k))));
       await self.clients.claim();
     })()
   );
@@ -41,35 +55,31 @@ self.addEventListener("fetch", (event) => {
   const req = event.request;
   const url = new URL(req.url);
 
-  // Never cache cross-origin
   if (url.origin !== self.location.origin) {
     event.respondWith(fetch(req, { cache: "no-store" }));
     return;
   }
 
-  const isPuzzleJson =
-    url.pathname.startsWith("/puzzles/") && url.pathname.endsWith(".json");
-  const isIndexJson = url.pathname.endsWith("/puzzles/index.json");
-
   const isShell =
     req.mode === "navigate" ||
     url.pathname.endsWith("/") ||
     url.pathname.endsWith("/index.html") ||
-    url.pathname.endsWith("/app.js") ||
     url.pathname.endsWith("/styles.css") ||
     url.pathname.endsWith("/idb.js") ||
-    url.pathname.endsWith("/manifest.webmanifest");
+    url.pathname.endsWith("/manifest.webmanifest") ||
+    url.pathname.endsWith("/version.json") ||
+    url.pathname.endsWith("/app.js");
 
-  // App shell: network-first (keeps you current), cache fallback for offline
-  if (isShell || isIndexJson) {
+  // Network-first for shell (stays fresh), cache fallback for offline
+  if (isShell) {
     event.respondWith(
       (async () => {
         try {
           const fresh = await fetch(req, { cache: "no-store" });
-          if (req.method === "GET" && fresh && fresh.ok) {
-            const cache = await caches.open(CACHE_NAME);
-            cache.put(req, fresh.clone());
-          }
+          // store into whatever the current version cache is
+          const v = await getVersion();
+          const cache = await caches.open(`lovcryptic-shell-${v}`);
+          cache.put(req, fresh.clone());
           return fresh;
         } catch {
           const cached = await caches.match(req);
@@ -85,15 +95,17 @@ self.addEventListener("fetch", (event) => {
     return;
   }
 
-  // Puzzle JSON: cache-first (fast), network to populate cache when missing
-  if (isPuzzleJson) {
+  // puzzle json: cache-first
+  const isPuzzleJson = url.pathname.startsWith("/LovCryptics/puzzles/") || url.pathname.startsWith("/puzzles/");
+  if (isPuzzleJson && url.pathname.endsWith(".json")) {
     event.respondWith(
       (async () => {
         const cached = await caches.match(req);
         if (cached) return cached;
         const fresh = await fetch(req, { cache: "no-store" });
         if (fresh && fresh.ok) {
-          const cache = await caches.open(CACHE_NAME);
+          const v = await getVersion();
+          const cache = await caches.open(`lovcryptic-shell-${v}`);
           cache.put(req, fresh.clone());
         }
         return fresh;
@@ -102,17 +114,11 @@ self.addEventListener("fetch", (event) => {
     return;
   }
 
-  // Other same-origin: cache-first
   event.respondWith(
     (async () => {
       const cached = await caches.match(req);
       if (cached) return cached;
-      const fresh = await fetch(req);
-      if (req.method === "GET" && fresh && fresh.ok) {
-        const cache = await caches.open(CACHE_NAME);
-        cache.put(req, fresh.clone());
-      }
-      return fresh;
+      return fetch(req);
     })()
   );
 });
