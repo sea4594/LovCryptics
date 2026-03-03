@@ -1,6 +1,3 @@
-
-
-
 import * as idb from "./idb.js";
 
 /* ===========================
@@ -8,20 +5,13 @@ import * as idb from "./idb.js";
 =========================== */
 
 const PSID_DEFAULT = "100000160";
-
-// Put your Google OAuth Client ID here:
-const GOOGLE_CLIENT_ID = "36850930626-iunbe4q4pds4ouea93f39rjqkk1icgs0.apps.googleusercontent.com";
-
-// Drive scope for appDataFolder storage (hidden app storage)
+const GOOGLE_CLIENT_ID =
+  "36850930626-iunbe4q4pds4ouea93f39rjqkk1icgs0.apps.googleusercontent.com";
 const DRIVE_SCOPE = "https://www.googleapis.com/auth/drive.appdata";
 
 const FETCH_TIMEOUT_MS = 8000;
-const HARD_SYNC_TIMEOUT_MS = 15000;
+const INDEX_REFRESH_EVERY_MS = 30 * 60 * 1000;
 
-// Background refresh of puzzles index (lightweight)
-const INDEX_REFRESH_EVERY_MS = 30 * 60 * 1000; // 30 minutes
-
-// Progress file in Drive appDataFolder
 const DRIVE_PROGRESS_FILENAME = "lovcryptic_progress_v1.json";
 
 /* ===========================
@@ -88,7 +78,7 @@ let current = {
   date: null,
   spec: null,
   progress: null,
-  selected: null
+  selected: null,
 };
 
 let puzzleOpen = false;
@@ -117,14 +107,24 @@ let signedIn = false;
    INIT
 =========================== */
 
-init();
+init().catch((e) => {
+  console.error(e);
+  homeStatusEl.textContent = "Error (see console)";
+});
 
 async function init() {
   await registerServiceWorker();
 
   applySavedTheme();
   applyLastUpdatedLabel();
-  await normalizeOrphanRunningTimers();
+
+  // Don’t let IDB issues brick the UI
+  try {
+    await normalizeOrphanRunningTimers();
+  } catch (e) {
+    console.error(e);
+    homeStatusEl.textContent = "Storage unavailable (IndexedDB blocked)";
+  }
 
   // Home controls
   sortBtn.addEventListener("click", () => openSheet("sortMenu"));
@@ -136,13 +136,8 @@ async function init() {
     openSheet("themeMenu");
   });
 
-  loginBtn.addEventListener("click", async () => {
-    await loginGoogle();
-  });
-
-  logoutBtn.addEventListener("click", async () => {
-    logoutGoogle();
-  });
+  loginBtn.addEventListener("click", async () => loginGoogle());
+  logoutBtn.addEventListener("click", () => logoutGoogle());
 
   // Puzzle controls
   hintBtn.addEventListener("click", () => openSheet("hintMenu"));
@@ -186,10 +181,22 @@ async function init() {
   });
 
   // Hints + checks
-  revealLetterBtn.addEventListener("click", async () => { closeSheet("hintMenu"); await hintRevealLetter(); });
-  revealWordBtn.addEventListener("click", async () => { closeSheet("hintMenu"); await hintRevealWord(); });
-  checkWordBtn.addEventListener("click", async () => { closeSheet("hintMenu"); await hintCheckWord(); });
-  checkPuzzleBtn.addEventListener("click", async () => { closeSheet("hintMenu"); await hintCheckPuzzle(); });
+  revealLetterBtn.addEventListener("click", async () => {
+    closeSheet("hintMenu");
+    await hintRevealLetter();
+  });
+  revealWordBtn.addEventListener("click", async () => {
+    closeSheet("hintMenu");
+    await hintRevealWord();
+  });
+  checkWordBtn.addEventListener("click", async () => {
+    closeSheet("hintMenu");
+    await hintCheckWord();
+  });
+  checkPuzzleBtn.addEventListener("click", async () => {
+    closeSheet("hintMenu");
+    await hintCheckPuzzle();
+  });
 
   toggleChecksBtn.addEventListener("click", async () => {
     if (!current.progress) return;
@@ -208,10 +215,19 @@ async function init() {
   });
 
   // Menu actions
-  saveExitBtn.addEventListener("click", async () => { closeSheet("mainMenu"); await exitPuzzle(); });
+  saveExitBtn.addEventListener("click", async () => {
+    closeSheet("mainMenu");
+    await exitPuzzle();
+  });
 
-  restartBtn.addEventListener("click", () => { closeSheet("mainMenu"); openSheet("restartConfirm"); });
-  restartYesBtn.addEventListener("click", async () => { closeSheet("restartConfirm"); await restartPuzzle(); });
+  restartBtn.addEventListener("click", () => {
+    closeSheet("mainMenu");
+    openSheet("restartConfirm");
+  });
+  restartYesBtn.addEventListener("click", async () => {
+    closeSheet("restartConfirm");
+    await restartPuzzle();
+  });
 
   congratsExitBtn.addEventListener("click", async () => {
     closeSheet("congrats");
@@ -220,14 +236,14 @@ async function init() {
 
   // Keyboard
   kbd.addEventListener("keydown", onKeyDown);
-
-  // Desktop shortcuts (arrows/esc/enter)
   window.addEventListener("keydown", onGlobalKeyDown);
 
   // Lifecycle
   document.addEventListener("visibilitychange", async () => {
     if (!document.hidden) {
-      await normalizeOrphanRunningTimers();
+      try {
+        await normalizeOrphanRunningTimers();
+      } catch {}
       if (!puzzleOpen) await refreshIndexAndCache({ quiet: true });
     } else {
       if (puzzleOpen) await stopTimerAndSave();
@@ -235,7 +251,9 @@ async function init() {
   });
 
   window.addEventListener("pageshow", async () => {
-    await normalizeOrphanRunningTimers();
+    try {
+      await normalizeOrphanRunningTimers();
+    } catch {}
     if (!puzzleOpen) await refreshIndexAndCache({ quiet: true });
   });
 
@@ -243,20 +261,39 @@ async function init() {
     if (current.spec) computeCellSize(current.spec.rows, current.spec.cols);
   });
 
-  // Load puzzles index + cache locally
+  // Load index → populate metadata fast (no mass prefetch)
   await refreshIndexAndCache({ quiet: false });
-
   await renderHome();
-
   scheduleIndexRefresh();
 
-  // Prepare GIS token client (script loads async; we retry until available)
+  // Google
   await initGoogleTokenClient();
   updateAccountUI();
+
+  homeStatusEl.textContent = "Loaded";
 }
 
 /* ===========================
-   SERVICE WORKER (auto-update)
+   THEME + LABELS
+=========================== */
+
+function applySavedTheme() {
+  const t = localStorage.getItem("lovcrypticTheme") || "light";
+  setTheme(t);
+}
+
+function setTheme(t) {
+  document.body.setAttribute("data-theme", t);
+  localStorage.setItem("lovcrypticTheme", t);
+}
+
+function applyLastUpdatedLabel() {
+  const s = localStorage.getItem("lovcrypticLastUpdated");
+  if (s) homeStatusEl.textContent = `Updated ${s}`;
+}
+
+/* ===========================
+   SERVICE WORKER
 =========================== */
 
 async function registerServiceWorker() {
@@ -281,7 +318,9 @@ async function registerServiceWorker() {
       window.__lovcryptic_reloaded = true;
       window.location.reload();
     });
-  } catch {}
+  } catch (e) {
+    console.error(e);
+  }
 }
 
 /* ===========================
@@ -289,15 +328,11 @@ async function registerServiceWorker() {
 =========================== */
 
 async function initGoogleTokenClient() {
-  // Wait for google.accounts to exist
   for (let i = 0; i < 40; i++) {
     if (window.google?.accounts?.oauth2?.initTokenClient) break;
     await sleep(150);
   }
-  if (!window.google?.accounts?.oauth2?.initTokenClient) {
-    // Login won't work until script loads; user can refresh.
-    return;
-  }
+  if (!window.google?.accounts?.oauth2?.initTokenClient) return;
 
   tokenClient = window.google.accounts.oauth2.initTokenClient({
     client_id: GOOGLE_CLIENT_ID,
@@ -308,10 +343,9 @@ async function initGoogleTokenClient() {
         signedIn = true;
         driveFileId = null;
         updateAccountUI();
-        // pull progress from Drive into IndexedDB
         pullProgressFromDrive().catch(() => {});
       }
-    }
+    },
   });
 }
 
@@ -357,8 +391,8 @@ async function driveRequest(url, opts = {}) {
       signal: ctrl.signal,
       headers: {
         ...(opts.headers || {}),
-        Authorization: `Bearer ${accessToken}`
-      }
+        Authorization: `Bearer ${accessToken}`,
+      },
     });
     if (!res.ok) {
       const txt = await res.text().catch(() => "");
@@ -373,7 +407,6 @@ async function driveRequest(url, opts = {}) {
 async function findOrCreateDriveFileId() {
   if (driveFileId) return driveFileId;
 
-  // Search appDataFolder for our file
   const q = encodeURIComponent(`name='${DRIVE_PROGRESS_FILENAME}' and trashed=false`);
   const url = `https://www.googleapis.com/drive/v3/files?spaces=appDataFolder&q=${q}&fields=files(id,name,modifiedTime)`;
   const res = await driveRequest(url);
@@ -384,7 +417,6 @@ async function findOrCreateDriveFileId() {
     return driveFileId;
   }
 
-  // Create file in appDataFolder
   const meta = { name: DRIVE_PROGRESS_FILENAME, parents: ["appDataFolder"] };
   const boundary = "-------314159265358979323846";
   const body =
@@ -401,7 +433,7 @@ async function findOrCreateDriveFileId() {
     {
       method: "POST",
       headers: { "Content-Type": `multipart/related; boundary=${boundary}` },
-      body
+      body,
     }
   );
   const created = await createRes.json();
@@ -411,52 +443,53 @@ async function findOrCreateDriveFileId() {
 
 async function pullProgressFromDrive() {
   const fid = await findOrCreateDriveFileId();
-
   const res = await driveRequest(`https://www.googleapis.com/drive/v3/files/${fid}?alt=media`);
   const cloud = await res.json().catch(() => ({ version: 1, progress: {} }));
   const cloudMap = cloud?.progress || {};
 
-  // Merge into local IndexedDB progress store
   const localAll = await idb.getAll("progress");
-  const localMap = new Map(localAll.map(r => [r.key, r]));
-
+  const localMap = new Map(localAll.map((r) => [r.key, r]));
   const now = Date.now();
 
   for (const [key, cloudRec] of Object.entries(cloudMap)) {
     const localRec = localMap.get(key);
     if (!localRec) {
-      await idb.put("progress", { key, updatedAt: cloudRec.updatedAt || now, progress: cloudRec.progress, snap: cloudRec.snap || null });
+      await idb.put("progress", {
+        key,
+        updatedAt: cloudRec.updatedAt || now,
+        progress: cloudRec.progress,
+        snap: cloudRec.snap || null,
+      });
       continue;
     }
-    // pick whichever is newer
     const lc = localRec.updatedAt || 0;
     const cc = cloudRec.updatedAt || 0;
     if (cc > lc) {
-      await idb.put("progress", { key, updatedAt: cc, progress: cloudRec.progress, snap: cloudRec.snap || localRec.snap || null });
+      await idb.put("progress", {
+        key,
+        updatedAt: cc,
+        progress: cloudRec.progress,
+        snap: cloudRec.snap || localRec.snap || null,
+      });
     }
   }
 
-  // Also push any local entries cloud doesn't have
   await pushProgressToDrive({ merge: true });
   await renderHome();
 }
 
 async function pushProgressToDrive({ merge } = { merge: true }) {
   if (!accessToken) return;
-
   const fid = await findOrCreateDriveFileId();
 
   let base = { version: 1, updatedAt: Date.now(), progress: {} };
-
   if (merge) {
     try {
       const res = await driveRequest(`https://www.googleapis.com/drive/v3/files/${fid}?alt=media`);
       base = await res.json();
       if (!base || typeof base !== "object") base = { version: 1, updatedAt: Date.now(), progress: {} };
       if (!base.progress) base.progress = {};
-    } catch {
-      // ignore, we'll overwrite
-    }
+    } catch {}
   }
 
   const localAll = await idb.getAll("progress");
@@ -464,20 +497,16 @@ async function pushProgressToDrive({ merge } = { merge: true }) {
     base.progress[rec.key] = {
       updatedAt: rec.updatedAt || Date.now(),
       progress: rec.progress,
-      snap: rec.snap || null
+      snap: rec.snap || null,
     };
   }
   base.updatedAt = Date.now();
 
-  // Update file content (media upload)
-  await driveRequest(
-    `https://www.googleapis.com/upload/drive/v3/files/${fid}?uploadType=media`,
-    {
-      method: "PATCH",
-      headers: { "Content-Type": "application/json; charset=UTF-8" },
-      body: JSON.stringify(base)
-    }
-  );
+  await driveRequest(`https://www.googleapis.com/upload/drive/v3/files/${fid}?uploadType=media`, {
+    method: "PATCH",
+    headers: { "Content-Type": "application/json; charset=UTF-8" },
+    body: JSON.stringify(base),
+  });
 }
 
 function scheduleCloudSync() {
@@ -490,7 +519,7 @@ function scheduleCloudSync() {
 }
 
 /* ===========================
-   PUZZLES: STATIC INDEX + LOCAL CACHE
+   PUZZLES INDEX → METADATA ONLY
 =========================== */
 
 async function refreshIndexAndCache({ quiet }) {
@@ -501,28 +530,23 @@ async function refreshIndexAndCache({ quiet }) {
     const dates = Array.isArray(idx?.dates) ? idx.dates : [];
     const psid = String(idx?.psid || PSID_DEFAULT);
 
-    // Store puzzle records (metadata) into IDB "puzzles" without pulling all JSON into memory
-    // We also fetch missing puzzle json files and store their raw data in IDB (for offline parsing).
+    // Upsert metadata entries quickly (no puzzle JSON fetch here)
     const existing = await idb.getAll("puzzles");
-    const existingKeys = new Set(existing.map(p => p.key));
+    const existingKeys = new Set(existing.map((p) => p.key));
 
-    // Fetch missing dates (but don’t stall forever)
+    let inserted = 0;
     for (const d of dates) {
       const key = `${psid}|${d}`;
       if (existingKeys.has(key)) continue;
-
-      const url = `./puzzles/${psid}/${d}.json`;
-      const data = await fetchJson(url, { cache: "no-store" });
-
-      await idb.put("puzzles", { key, psid, date: d, fetchedAt: Date.now(), data });
+      await idb.put("puzzles", { key, psid, date: d, fetchedAt: 0, data: null });
+      inserted++;
     }
 
-    // If we have puzzles but no status stamp, show updated
+    localStorage.setItem("lovcrypticLastUpdated", new Date().toLocaleString());
     applyLastUpdatedLabel();
-    if (!localStorage.getItem("lovcrypticLastUpdated")) {
-      homeStatusEl.textContent = "Loaded";
-    }
-  } catch {
+    if (!quiet) homeStatusEl.textContent = inserted ? "Loaded" : (homeStatusEl.textContent || "Loaded");
+  } catch (e) {
+    console.error(e);
     const s = localStorage.getItem("lovcrypticLastUpdated");
     homeStatusEl.textContent = s ? `Updated ${s} (offline)` : "Offline";
   }
@@ -543,15 +567,16 @@ function scheduleIndexRefresh() {
 =========================== */
 
 async function renderHome() {
-  await normalizeOrphanRunningTimers();
+  try {
+    await normalizeOrphanRunningTimers();
+  } catch {}
 
   const puzzles = await idb.getAll("puzzles");
   const progress = await idb.getAll("progress");
   const progMap = new Map(progress.map((p) => [p.key, p]));
-
   const now = Date.now();
 
-  const items = puzzles.map(p => {
+  const items = puzzles.map((p) => {
     const pr = progMap.get(p.key);
     const snap = pr?.snap || { pct: 0 };
     const isCompleted = !!pr?.progress?.completed;
@@ -560,18 +585,20 @@ async function renderHome() {
     const runningSince = pr?.progress?.runningSince || null;
 
     const isThisOpen = puzzleOpen && current?.key && p.key === current.key;
-    const timeMs = elapsedMs + (isThisOpen && runningSince ? (now - runningSince) : 0);
+    const timeMs = elapsedMs + (isThisOpen && runningSince ? now - runningSince : 0);
 
     const lastOpenedAt = pr?.progress?.lastOpenedAt || 0;
     return { p, snap, isCompleted, timeMs, lastOpenedAt };
   });
 
   if (sortMode === "recent") {
-    items.sort((a,b) => (b.lastOpenedAt - a.lastOpenedAt) || (a.p.date < b.p.date ? 1 : -1));
+    items.sort(
+      (a, b) => (b.lastOpenedAt - a.lastOpenedAt) || (a.p.date < b.p.date ? 1 : -1)
+    );
   } else if (sortMode === "oldest") {
-    items.sort((a,b) => (a.p.date < b.p.date ? -1 : 1));
+    items.sort((a, b) => (a.p.date < b.p.date ? -1 : 1));
   } else {
-    items.sort((a,b) => (a.p.date < b.p.date ? 1 : -1));
+    items.sort((a, b) => (a.p.date < b.p.date ? 1 : -1));
   }
 
   archiveEl.innerHTML = "";
@@ -587,7 +614,7 @@ async function renderHome() {
     if (filterMode === "completed" && !isCompleted) continue;
     if (filterMode === "not_started" && !isNotStarted) continue;
 
-    const status = isCompleted ? "Completed" : (isNotStarted ? "Not started" : "In progress");
+    const status = isCompleted ? "Completed" : isNotStarted ? "Not started" : "In progress";
     const timeLabel = isNotStarted ? "Not started" : fmtTime(timeMs);
 
     const card = document.createElement("div");
@@ -595,17 +622,19 @@ async function renderHome() {
     card.setAttribute("role", "button");
     card.setAttribute("tabindex", "0");
 
-    card.innerHTML =
-      `<div>
-         <div><b>${escapeHtml(p.date)}</b></div>
-         <small>${status} • ${timeLabel}</small>
-       </div>
-       <div class="pct"><b>${snap.pct ?? 0}%</b></div>`;
+    card.innerHTML = `<div>
+        <div><b>${escapeHtml(p.date)}</b></div>
+        <small>${status} • ${timeLabel}</small>
+      </div>
+      <div class="pct"><b>${snap.pct ?? 0}%</b></div>`;
 
-    const open = async () => { await openPuzzle(p.psid, p.date); };
+    const open = async () => openPuzzle(p.psid, p.date);
     card.addEventListener("click", open);
     card.addEventListener("keydown", (e) => {
-      if (e.key === "Enter" || e.key === " ") { e.preventDefault(); open(); }
+      if (e.key === "Enter" || e.key === " ") {
+        e.preventDefault();
+        open();
+      }
     });
 
     archiveEl.appendChild(card);
@@ -651,12 +680,18 @@ async function openPuzzle(psid, date) {
 
   let puzzleRec = await idb.get("puzzles", key);
   if (!puzzleRec) {
-    // If the index says it exists, it should be in repo. Try direct fetch and cache.
+    // index might not be in IDB yet; create metadata on the fly
+    puzzleRec = { key, psid, date, fetchedAt: 0, data: null };
+    await idb.put("puzzles", puzzleRec);
+  }
+
+  // Fetch puzzle JSON on-demand
+  if (!puzzleRec.data) {
     const url = `./puzzles/${psid}/${date}.json`;
     const data = await fetchJson(url, { cache: "no-store" });
-    await idb.put("puzzles", { key, psid, date, fetchedAt: Date.now(), data });
-    puzzleRec = await idb.get("puzzles", key);
-    if (!puzzleRec) return;
+    puzzleRec.data = data;
+    puzzleRec.fetchedAt = Date.now();
+    await idb.put("puzzles", puzzleRec);
   }
 
   const spec = parsePuzzle(puzzleRec.data);
@@ -664,7 +699,7 @@ async function openPuzzle(psid, date) {
   const progress = saved?.progress || freshProgress(spec);
 
   progress.lastOpenedAt = Date.now();
-  progress.runningSince = null; // ensure clean start
+  progress.runningSince = null;
   await writeProgress(key, spec, progress);
 
   current = { key, psid, date, spec, progress, selected: null };
@@ -698,7 +733,7 @@ async function exitPuzzle() {
   puzzleOpen = false;
   await stopTimerAndSave();
 
-  current = { key:null, psid:PSID_DEFAULT, date:null, spec:null, progress:null, selected:null };
+  current = { key: null, psid: PSID_DEFAULT, date: null, spec: null, progress: null, selected: null };
   correctWordIds.clear();
 
   stopClockLoop();
@@ -708,15 +743,10 @@ async function exitPuzzle() {
   homeView.classList.remove("hidden");
 
   try {
-  await normalizeOrphanRunningTimers();
-} catch (e) {
-  console.error(e);
-  homeStatusEl.textContent = "Storage unavailable (IndexedDB blocked)";
-  // continue so the UI still becomes interactive
-}
-  await renderHome();
+    await normalizeOrphanRunningTimers();
+  } catch {}
 
-  // push progress if logged in
+  await renderHome();
   scheduleCloudSync();
 }
 
@@ -789,7 +819,10 @@ async function startTimerIfOpen(ensureVisible = false) {
   if (!current.progress.runningSince) current.progress.runningSince = Date.now();
 
   startClockLoop();
-  if (ensureVisible) { lastPaintedSecond = null; paintTimer(); }
+  if (ensureVisible) {
+    lastPaintedSecond = null;
+    paintTimer();
+  }
 
   await autosave(true);
 }
@@ -813,7 +846,8 @@ async function stopTimerAndSave() {
 
   if (current.progress.runningSince) {
     const now = Date.now();
-    current.progress.elapsedMs = (current.progress.elapsedMs || 0) + (now - current.progress.runningSince);
+    current.progress.elapsedMs =
+      (current.progress.elapsedMs || 0) + (now - current.progress.runningSince);
     current.progress.runningSince = null;
   }
 
@@ -850,7 +884,7 @@ function parsePuzzle(apiJson) {
     const c = params.get(`start_k${i}`);
     if (!w && !clue && !dir && r === null && c === null) break;
     if (!w || !dir || r === null || c === null) continue;
-    wordsRaw.push({ idx:i, answer:w, clue: clue || "", dir, r:parseInt(r,10), c:parseInt(c,10) });
+    wordsRaw.push({ idx: i, answer: w, clue: clue || "", dir, r: parseInt(r, 10), c: parseInt(c, 10) });
   }
 
   const solution = Array.from({ length: rows * cols }, () => null);
@@ -879,7 +913,7 @@ function parsePuzzle(apiJson) {
     }
   }
 
-  const wordMap = new Map(words.map(w => [w.id, w]));
+  const wordMap = new Map(words.map((w) => [w.id, w]));
   return { rows, cols, solution, isBlock, words, wordMap, cellToWords };
 }
 
@@ -891,12 +925,14 @@ function freshProgress(spec) {
     wordChecks: false,
     completed: false,
     completedAt: null,
-    lastOpenedAt: 0
+    lastOpenedAt: 0,
   };
 }
 
 function snapshot(spec, progress) {
-  let total = 0, filled = 0, correctFilled = 0;
+  let total = 0,
+    filled = 0,
+    correctFilled = 0;
   for (let i = 0; i < spec.solution.length; i++) {
     if (spec.isBlock[i]) continue;
     total++;
@@ -908,7 +944,7 @@ function snapshot(spec, progress) {
     }
   }
   const pct = total ? Math.round((filled / total) * 100) : 0;
-  const allCorrect = (filled === total) && (correctFilled === total);
+  const allCorrect = filled === total && correctFilled === total;
   return { total, filled, pct, allCorrect };
 }
 
@@ -972,7 +1008,7 @@ function computeCellSize(rows, cols) {
 }
 
 /* ===========================
-   SELECTION + CLUE (no Across/Down)
+   SELECTION + CLUE
 =========================== */
 
 function onCellTap(cellIndex) {
@@ -985,17 +1021,20 @@ function onCellTap(cellIndex) {
   let nextDir = null;
 
   if (current.selected && current.selected.cellIndex === cellIndex && choices.length > 1) {
-    const idx = choices.findIndex(c => c.wordId === current.selected.wordId);
+    const idx = choices.findIndex((c) => c.wordId === current.selected.wordId);
     const next = choices[(idx + 1) % choices.length];
     nextWordId = next.wordId;
     nextDir = next.dir;
   } else if (current.selected) {
-    const keep = choices.find(c => c.dir === current.selected.dir);
-    if (keep) { nextWordId = keep.wordId; nextDir = keep.dir; }
+    const keep = choices.find((c) => c.dir === current.selected.dir);
+    if (keep) {
+      nextWordId = keep.wordId;
+      nextDir = keep.dir;
+    }
   }
 
   if (!nextWordId) {
-    const preferAcross = choices.find(c => c.dir === "a") || choices[0];
+    const preferAcross = choices.find((c) => c.dir === "a") || choices[0];
     nextWordId = preferAcross.wordId;
     nextDir = preferAcross.dir;
   }
@@ -1007,8 +1046,8 @@ function onCellTap(cellIndex) {
 function getWordChoicesAtCell(cellIndex) {
   const m = current.spec.cellToWords[cellIndex];
   const out = [];
-  for (const id of (m.a || [])) out.push({ wordId: id, dir: "a" });
-  for (const id of (m.d || [])) out.push({ wordId: id, dir: "d" });
+  for (const id of m.a || []) out.push({ wordId: id, dir: "a" });
+  for (const id of m.d || []) out.push({ wordId: id, dir: "d" });
   return out;
 }
 
@@ -1020,7 +1059,6 @@ function setSelection(sel) {
 
 function paintSelection() {
   for (const el of gridEl.children) el.classList.remove("selected", "word");
-
   if (!current.selected) return;
 
   const { cellIndex, wordId } = current.selected;
@@ -1040,9 +1078,15 @@ function paintSelection() {
 }
 
 function showCurrentClue() {
-  if (!current.selected?.wordId) { showClue(null); return; }
+  if (!current.selected?.wordId) {
+    showClue(null);
+    return;
+  }
   const w = current.spec.wordMap.get(current.selected.wordId);
-  if (!w) { showClue(null); return; }
+  if (!w) {
+    showClue(null);
+    return;
+  }
 
   const hasLen = /\(\s*\d+\s*\)\s*$/.test((w.clue || "").trim());
   const text = hasLen ? `${w.clue}` : `${w.clue} (${w.len})`;
@@ -1061,7 +1105,7 @@ function showClue(text) {
 }
 
 /* ===========================
-   WORD CHECKS (verified correct)
+   WORD CHECKS
 =========================== */
 
 function clearAllGreen() {
@@ -1105,11 +1149,11 @@ function isWordFilledAndCorrect(w) {
 function cellIsVerifiedCorrect(cellIndex) {
   const m = current.spec.cellToWords[cellIndex];
   const ids = [...(m.a || []), ...(m.d || [])];
-  return ids.some(id => correctWordIds.has(id));
+  return ids.some((id) => correctWordIds.has(id));
 }
 
 /* ===========================
-   KEYBOARD SHORTCUTS (desktop)
+   KEYBOARD SHORTCUTS
 =========================== */
 
 function anySheetOpen() {
@@ -1119,11 +1163,9 @@ function anySheetOpen() {
 function onGlobalKeyDown(e) {
   if (!puzzleOpen) return;
 
-  // Esc opens menu popup
   if (e.key === "Escape") {
     e.preventDefault();
     if (anySheetOpen()) {
-      // close topmost: easiest close all
       for (const el of document.querySelectorAll(".sheet")) el.classList.add("hidden");
       document.body.classList.remove("modalOpen");
     } else {
@@ -1134,7 +1176,6 @@ function onGlobalKeyDown(e) {
 
   if (anySheetOpen()) return;
 
-  // Enter toggles word at intersections
   if (e.key === "Enter") {
     e.preventDefault();
     if (!current.selected) return;
@@ -1142,14 +1183,13 @@ function onGlobalKeyDown(e) {
     const choices = getWordChoicesAtCell(idx);
     if (choices.length > 1) {
       const curId = current.selected.wordId;
-      const next = choices.find(c => c.wordId !== curId) || choices[0];
+      const next = choices.find((c) => c.wordId !== curId) || choices[0];
       setSelection({ cellIndex: idx, wordId: next.wordId, dir: next.dir });
     }
     return;
   }
 
-  // Arrow navigation
-  const arrows = ["ArrowLeft","ArrowRight","ArrowUp","ArrowDown"];
+  const arrows = ["ArrowLeft", "ArrowRight", "ArrowUp", "ArrowDown"];
   if (!arrows.includes(e.key)) return;
 
   e.preventDefault();
@@ -1159,31 +1199,44 @@ function onGlobalKeyDown(e) {
   let r = Math.floor(current.selected.cellIndex / cols);
   let c = current.selected.cellIndex % cols;
 
-  let dr = 0, dc = 0;
+  let dr = 0,
+    dc = 0;
   let wantDir = current.selected.dir;
 
-  if (e.key === "ArrowLeft") { dc = -1; wantDir = "a"; }
-  if (e.key === "ArrowRight") { dc = 1; wantDir = "a"; }
-  if (e.key === "ArrowUp") { dr = -1; wantDir = "d"; }
-  if (e.key === "ArrowDown") { dr = 1; wantDir = "d"; }
+  if (e.key === "ArrowLeft") {
+    dc = -1;
+    wantDir = "a";
+  }
+  if (e.key === "ArrowRight") {
+    dc = 1;
+    wantDir = "a";
+  }
+  if (e.key === "ArrowUp") {
+    dr = -1;
+    wantDir = "d";
+  }
+  if (e.key === "ArrowDown") {
+    dr = 1;
+    wantDir = "d";
+  }
 
-  // step to next non-block (stop at edges)
-  let nr = r + dr, nc = c + dc;
+  let nr = r + dr,
+    nc = c + dc;
   while (nr >= 0 && nr < rows && nc >= 0 && nc < cols) {
     const ni = nr * cols + nc;
     if (!isBlock[ni]) {
-      // pick word in desired direction if possible
       const choices = getWordChoicesAtCell(ni);
-      const keep = choices.find(ch => ch.dir === wantDir) || choices[0];
+      const keep = choices.find((ch) => ch.dir === wantDir) || choices[0];
       setSelection({ cellIndex: ni, wordId: keep.wordId, dir: keep.dir });
       return;
     }
-    nr += dr; nc += dc;
+    nr += dr;
+    nc += dc;
   }
 }
 
 /* ===========================
-   TYPING (overwrite blocked for verified words)
+   TYPING
 =========================== */
 
 async function onKeyDown(e) {
@@ -1199,7 +1252,6 @@ async function onKeyDown(e) {
   if (/^[a-zA-Z]$/.test(key)) {
     e.preventDefault();
 
-    // no overwrite for verified-correct
     if (current.progress.wordChecks && cellIsVerifiedCorrect(cellIndex)) {
       advanceForward(wordId, cellIndex);
       return;
@@ -1216,7 +1268,6 @@ async function onKeyDown(e) {
 
     const filledHere = getCell(cellIndex);
 
-    // do not delete verified-correct
     if (filledHere && current.progress.wordChecks && cellIsVerifiedCorrect(cellIndex)) {
       moveBackOneCell(wordId, cellIndex, { deletePrev: false });
       return;
@@ -1351,9 +1402,11 @@ async function completePuzzle() {
    WORD ORDER
 =========================== */
 
-function firstWord() { return current.spec?.words?.[0] || null; }
+function firstWord() {
+  return current.spec?.words?.[0] || null;
+}
 function nextWordAfter(wordId) {
-  const idx = current.spec.words.findIndex(w => w.id === wordId);
+  const idx = current.spec.words.findIndex((w) => w.id === wordId);
   if (idx < 0) return null;
   return current.spec.words[idx + 1] || null;
 }
@@ -1374,200 +1427,7 @@ function closeSheet(id) {
 }
 
 /* ===========================
-   TIMER
-=========================== */
-
-function getElapsedMs(progress) {
-  const base = progress.elapsedMs || 0;
-  return progress.runningSince ? base + (Date.now() - progress.runningSince) : base;
-}
-
-function paintTimer() {
-  if (!current.progress) return;
-  const ms = getElapsedMs(current.progress);
-  const s = Math.floor(ms / 1000);
-  if (s === lastPaintedSecond) return;
-  lastPaintedSecond = s;
-  timerEl.textContent = fmtTime(ms);
-}
-
-function startClockLoop() {
-  if (clockActive) return;
-  clockActive = true;
-  lastPaintedSecond = null;
-
-  const tick = () => {
-    if (!clockActive) return;
-    if (!puzzleOpen) return;
-    paintTimer();
-    clockRaf = requestAnimationFrame(tick);
-  };
-  clockRaf = requestAnimationFrame(tick);
-}
-
-function stopClockLoop() {
-  clockActive = false;
-  if (clockRaf) cancelAnimationFrame(clockRaf);
-  clockRaf = null;
-}
-
-async function startTimerIfOpen(ensureVisible = false) {
-  if (!puzzleOpen) return;
-  if (!current.key || !current.progress) return;
-
-  if (current.progress.completed) {
-    stopClockLoop();
-    paintTimer();
-    return;
-  }
-
-  if (!current.progress.runningSince) current.progress.runningSince = Date.now();
-
-  startClockLoop();
-  if (ensureVisible) { lastPaintedSecond = null; paintTimer(); }
-
-  await autosave(true);
-}
-
-async function forceRestartTimer() {
-  stopClockLoop();
-  if (!current.progress) return;
-
-  current.progress.elapsedMs = 0;
-  current.progress.runningSince = Date.now();
-
-  timerEl.textContent = "00:00";
-  lastPaintedSecond = null;
-
-  if (puzzleOpen) startClockLoop();
-}
-
-async function stopTimerAndSave() {
-  stopClockLoop();
-  if (!current.key || !current.progress) return;
-
-  if (current.progress.runningSince) {
-    const now = Date.now();
-    current.progress.elapsedMs = (current.progress.elapsedMs || 0) + (now - current.progress.runningSince);
-    current.progress.runningSince = null;
-  }
-
-  lastPaintedSecond = null;
-  paintTimer();
-  await autosave(true);
-}
-
-function fmtTime(ms) {
-  const s = Math.floor(ms / 1000);
-  const mm = String(Math.floor(s / 60)).padStart(2, "0");
-  const ss = String(s % 60).padStart(2, "0");
-  return `${mm}:${ss}`;
-}
-
-/* ===========================
-   SAVE / EXIT / RESTART
-=========================== */
-
-async function exitPuzzle() {
-  puzzleOpen = false;
-  await stopTimerAndSave();
-
-  current = { key:null, psid:PSID_DEFAULT, date:null, spec:null, progress:null, selected:null };
-  correctWordIds.clear();
-
-  stopClockLoop();
-  timerEl.textContent = "00:00";
-
-  puzzleView.classList.add("hidden");
-  homeView.classList.remove("hidden");
-
-  await normalizeOrphanRunningTimers();
-  await renderHome();
-
-  scheduleCloudSync();
-}
-
-async function restartPuzzle() {
-  if (!current.spec) return;
-
-  correctWordIds.clear();
-  clearAllGreen();
-
-  current.progress = freshProgress(current.spec);
-  current.progress.lastOpenedAt = Date.now();
-  current.selected = null;
-
-  renderGrid(current.spec, current.progress);
-  showClue(null);
-  computeCellSize(current.spec.rows, current.spec.cols);
-
-  await forceRestartTimer();
-  await autosave(true);
-}
-
-/* ===========================
-   ORPHAN TIMER HEALING
-=========================== */
-
-async function normalizeOrphanRunningTimers() {
-  const all = await idb.getAll("progress");
-  const now = Date.now();
-
-  for (const rec of all) {
-    const p = rec?.progress;
-    if (!p?.runningSince) continue;
-
-    const isCurrentlyOpen = puzzleOpen && current?.key && rec.key === current.key;
-    if (isCurrentlyOpen) continue;
-
-    const delta = now - p.runningSince;
-    if (delta > 0) p.elapsedMs = (p.elapsedMs || 0) + delta;
-    p.runningSince = null;
-
-    await idb.put("progress", { ...rec, progress: p, updatedAt: now });
-  }
-}
-
-/* ===========================
-   PROGRESS STRUCTURES
-=========================== */
-
-function freshProgress(spec) {
-  return {
-    fills: Array.from({ length: spec.rows * spec.cols }, () => ""),
-    elapsedMs: 0,
-    runningSince: null,
-    wordChecks: false,
-    completed: false,
-    completedAt: null,
-    lastOpenedAt: 0
-  };
-}
-
-async function writeProgress(key, spec, progress) {
-  const snap = snapshot(spec, progress);
-  await idb.put("progress", { key, updatedAt: Date.now(), progress, snap });
-}
-
-function snapshot(spec, progress) {
-  let total = 0, filled = 0, correctFilled = 0;
-  for (let i = 0; i < spec.solution.length; i++) {
-    if (spec.isBlock[i]) continue;
-    total++;
-    const got = (progress.fills[i] || "").toUpperCase();
-    if (got) {
-      filled++;
-      const want = (spec.solution[i] || "").toUpperCase();
-      if (got === want) correctFilled++;
-    }
-  }
-  const pct = total ? Math.round((filled / total) * 100) : 0;
-  const allCorrect = (filled === total) && (correctFilled === total);
-  return { total, filled, pct, allCorrect };
-}
-
-/* ===========================
-   UTIL: fetchJson
+   UTIL
 =========================== */
 
 async function fetchJson(url, fetchOpts = {}) {
@@ -1577,7 +1437,7 @@ async function fetchJson(url, fetchOpts = {}) {
     const res = await fetch(url, {
       ...fetchOpts,
       signal: ctrl.signal,
-      cache: fetchOpts.cache || "no-store"
+      cache: fetchOpts.cache || "no-store",
     });
     if (!res.ok) throw new Error(`HTTP ${res.status}`);
     return await res.json();
@@ -1587,5 +1447,14 @@ async function fetchJson(url, fetchOpts = {}) {
 }
 
 function sleep(ms) {
-  return new Promise(r => setTimeout(r, ms));
+  return new Promise((r) => setTimeout(r, ms));
+}
+
+function escapeHtml(s) {
+  return String(s)
+    .replaceAll("&", "&amp;")
+    .replaceAll("<", "&lt;")
+    .replaceAll(">", "&gt;")
+    .replaceAll('"', "&quot;")
+    .replaceAll("'", "&#039;");
 }
