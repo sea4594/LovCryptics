@@ -1,51 +1,56 @@
-const DB_NAME = "cryptic-cache-db";
-const DB_VER = 1;
+const DB_NAME = "lovcryptic_db";
+const DB_VERSION = 1;
 
-function openDB() {
+function openDb() {
   return new Promise((resolve, reject) => {
-    const req = indexedDB.open(DB_NAME, DB_VER);
+    const req = indexedDB.open(DB_NAME, DB_VERSION);
     req.onupgradeneeded = () => {
       const db = req.result;
-      if (!db.objectStoreNames.contains("puzzles")) {
-        db.createObjectStore("puzzles", { keyPath: "key" }); // `${psid}|${date}`
-      }
-      if (!db.objectStoreNames.contains("progress")) {
-        db.createObjectStore("progress", { keyPath: "key" }); // same key
-      }
+      if (!db.objectStoreNames.contains("puzzles")) db.createObjectStore("puzzles", { keyPath: "key" });
+      if (!db.objectStoreNames.contains("progress")) db.createObjectStore("progress", { keyPath: "key" });
+      if (!db.objectStoreNames.contains("meta")) db.createObjectStore("meta", { keyPath: "key" });
     };
     req.onsuccess = () => resolve(req.result);
     req.onerror = () => reject(req.error);
   });
 }
 
-async function tx(storeName, mode, fn) {
-  const db = await openDB();
+async function withStore(storeName, mode, fn) {
+  const db = await openDb();
   return new Promise((resolve, reject) => {
-    const t = db.transaction(storeName, mode);
-    const store = t.objectStore(storeName);
+    const tx = db.transaction(storeName, mode);
+    const store = tx.objectStore(storeName);
     const out = fn(store);
-    t.oncomplete = () => resolve(out);
-    t.onerror = () => reject(t.error);
+    tx.oncomplete = () => resolve(out);
+    tx.onerror = () => reject(tx.error);
   });
 }
 
-export async function put(store, value) {
-  return tx(store, "readwrite", (s) => s.put(value));
-}
-export async function get(store, key) {
-  const db = await openDB();
+export async function get(storeName, key) {
+  const db = await openDb();
   return new Promise((resolve, reject) => {
-    const t = db.transaction(store, "readonly");
-    const req = t.objectStore(store).get(key);
+    const tx = db.transaction(storeName, "readonly");
+    const store = tx.objectStore(storeName);
+    const req = store.get(key);
     req.onsuccess = () => resolve(req.result || null);
     req.onerror = () => reject(req.error);
   });
 }
-export async function getAll(store) {
-  const db = await openDB();
+
+export async function put(storeName, value) {
+  return withStore(storeName, "readwrite", (store) => store.put(value));
+}
+
+export async function del(storeName, key) {
+  return withStore(storeName, "readwrite", (store) => store.delete(key));
+}
+
+export async function getAll(storeName) {
+  const db = await openDb();
   return new Promise((resolve, reject) => {
-    const t = db.transaction(store, "readonly");
-    const req = t.objectStore(store).getAll();
+    const tx = db.transaction(storeName, "readonly");
+    const store = tx.objectStore(storeName);
+    const req = store.getAll();
     req.onsuccess = () => resolve(req.result || []);
     req.onerror = () => reject(req.error);
   });
