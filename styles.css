@@ -1,4 +1,26 @@
 :root{
+  --topbar-h: 42px;
+  --cluebar-h: 30px;
+  --card-h: 72px;
+  --cell-gap: 1px;
+  --grid-pad: 1px;
+}
+
+/* ===========================
+   THEME SYSTEM
+   data-theme-base: blackwhite|sage|lavender|ocean|sand
+   data-theme-mode: light|dark
+=========================== */
+
+body{
+  margin:0;
+  overflow:hidden;
+  font-family:system-ui,-apple-system,Segoe UI,Roboto,Helvetica,Arial,sans-serif;
+}
+
+/* Default: Black & White Light */
+body[data-theme-base="blackwhite"][data-theme-mode="light"],
+body:not([data-theme-base]){
   color-scheme: light;
 
   --bg:#f1f4ff;
@@ -16,25 +38,20 @@
 
   --sel:rgba(0,110,255,.95);
 
-  /* outline + ok fill are theme-derived via @supports below */
-  --word:rgba(0,110,255,.18);
-  --word-ok:rgba(0,110,255,.26);
-
   --sheet-dim:rgba(0,0,0,.24);
   --sheet-bg:rgba(255,255,255,.99);
-
-  --topbar-h: 42px;
-  --cluebar-h: 30px;
-  --card-h: 72px;
 }
 
-body[data-theme="dark"]{
+/* Black & White Dark (your prior dark theme) */
+body[data-theme-base="blackwhite"][data-theme-mode="dark"]{
   color-scheme: dark;
 
   --bg:#0e0f14;
   --panel:rgba(255,255,255,.07);
+
   --line:rgba(255,255,255,.20);
   --grid-line:rgba(255,255,255,.20);
+
   --text:rgba(255,255,255,.94);
   --muted:rgba(255,255,255,.68);
 
@@ -44,14 +61,12 @@ body[data-theme="dark"]{
 
   --sel:rgba(140,190,255,.98);
 
-  --word:rgba(140,190,255,.26);
-  --word-ok:rgba(140,190,255,.30);
-
   --sheet-dim:rgba(0,0,0,.46);
   --sheet-bg:rgba(18,18,22,.99);
 }
 
-body[data-theme="sage"]{
+/* Sage Light */
+body[data-theme-base="sage"][data-theme-mode="light"]{
   color-scheme: light;
   --bg:#e6f3ec; --panel:#fff;
   --line:rgba(18,42,30,.24); --grid-line:rgba(18,42,30,.24);
@@ -59,12 +74,23 @@ body[data-theme="sage"]{
   --cell-bg:rgba(255,255,255,.94); --cell-text:rgba(10,20,15,.95);
   --block-bg:rgba(10,20,15,.26);
   --sel:rgba(16,140,88,.96);
-  --word:rgba(16,140,88,.22);
-  --word-ok:rgba(16,140,88,.28);
   --sheet-dim:rgba(0,0,0,.22); --sheet-bg:rgba(255,255,255,.99);
 }
 
-body[data-theme="lavender"]{
+/* Sage Dark */
+body[data-theme-base="sage"][data-theme-mode="dark"]{
+  color-scheme: dark;
+  --bg:#0c1411; --panel:rgba(255,255,255,.07);
+  --line:rgba(255,255,255,.18); --grid-line:rgba(255,255,255,.18);
+  --text:rgba(255,255,255,.92); --muted:rgba(255,255,255,.66);
+  --cell-bg:rgba(255,255,255,.10); --cell-text:rgba(255,255,255,.95);
+  --block-bg:rgba(255,255,255,.28);
+  --sel:rgba(120,230,180,.92);
+  --sheet-dim:rgba(0,0,0,.46); --sheet-bg:rgba(18,18,22,.99);
+}
+
+/* Lavender Light */
+body[data-theme-base="lavender"][data-theme-mode="light"]{
   color-scheme: light;
   --bg:#eee8ff; --panel:#fff;
   --line:rgba(48,26,86,.24); --grid-line:rgba(48,26,86,.24);
@@ -72,12 +98,23 @@ body[data-theme="lavender"]{
   --cell-bg:rgba(255,255,255,.94); --cell-text:rgba(26,16,48,.95);
   --block-bg:rgba(26,16,48,.24);
   --sel:rgba(108,72,235,.96);
-  --word:rgba(108,72,235,.22);
-  --word-ok:rgba(108,72,235,.26);
   --sheet-dim:rgba(0,0,0,.22); --sheet-bg:rgba(255,255,255,.99);
 }
 
-body[data-theme="ocean"]{
+/* Lavender Dark */
+body[data-theme-base="lavender"][data-theme-mode="dark"]{
+  color-scheme: dark;
+  --bg:#141022; --panel:rgba(255,255,255,.07);
+  --line:rgba(255,255,255,.18); --grid-line:rgba(255,255,255,.18);
+  --text:rgba(255,255,255,.92); --muted:rgba(255,255,255,.66);
+  --cell-bg:rgba(255,255,255,.10); --cell-text:rgba(255,255,255,.95);
+  --block-bg:rgba(255,255,255,.28);
+  --sel:rgba(190,160,255,.94);
+  --sheet-dim:rgba(0,0,0,.46); --sheet-bg:rgba(18,18,22,.99);
+}
+
+/* Ocean Light */
+body[data-theme-base="ocean"][data-theme-mode="light"]{
   color-scheme: light;
   --bg:#e3f2ff; --panel:#fff;
   --line:rgba(10,50,85,.24); --grid-line:rgba(10,50,85,.24);
@@ -85,12 +122,23 @@ body[data-theme="ocean"]{
   --cell-bg:rgba(255,255,255,.94); --cell-text:rgba(10,25,45,.95);
   --block-bg:rgba(10,25,45,.24);
   --sel:rgba(0,120,195,.96);
-  --word:rgba(0,120,195,.22);
-  --word-ok:rgba(0,120,195,.26);
   --sheet-dim:rgba(0,0,0,.22); --sheet-bg:rgba(255,255,255,.99);
 }
 
-body[data-theme="sand"]{
+/* Ocean Dark */
+body[data-theme-base="ocean"][data-theme-mode="dark"]{
+  color-scheme: dark;
+  --bg:#07131c; --panel:rgba(255,255,255,.07);
+  --line:rgba(255,255,255,.18); --grid-line:rgba(255,255,255,.18);
+  --text:rgba(255,255,255,.92); --muted:rgba(255,255,255,.66);
+  --cell-bg:rgba(255,255,255,.10); --cell-text:rgba(255,255,255,.95);
+  --block-bg:rgba(255,255,255,.28);
+  --sel:rgba(120,200,255,.94);
+  --sheet-dim:rgba(0,0,0,.46); --sheet-bg:rgba(18,18,22,.99);
+}
+
+/* Sand Light */
+body[data-theme-base="sand"][data-theme-mode="light"]{
   color-scheme: light;
   --bg:#ffedd3; --panel:#fff;
   --line:rgba(78,54,20,.24); --grid-line:rgba(78,54,20,.24);
@@ -98,28 +146,46 @@ body[data-theme="sand"]{
   --cell-bg:rgba(255,255,255,.94); --cell-text:rgba(38,25,10,.95);
   --block-bg:rgba(38,25,10,.28);
   --sel:rgba(210,120,35,.96);
-  --word:rgba(210,120,35,.22);
-  --word-ok:rgba(210,120,35,.26);
   --sheet-dim:rgba(0,0,0,.22); --sheet-bg:rgba(255,255,255,.99);
 }
 
-/* Prefer theme-derived mix when supported */
+/* Sand Dark */
+body[data-theme-base="sand"][data-theme-mode="dark"]{
+  color-scheme: dark;
+  --bg:#1a120a; --panel:rgba(255,255,255,.07);
+  --line:rgba(255,255,255,.18); --grid-line:rgba(255,255,255,.18);
+  --text:rgba(255,255,255,.92); --muted:rgba(255,255,255,.66);
+  --cell-bg:rgba(255,255,255,.10); --cell-text:rgba(255,255,255,.95);
+  --block-bg:rgba(255,255,255,.28);
+  --sel:rgba(255,190,120,.94);
+  --sheet-dim:rgba(0,0,0,.46); --sheet-bg:rgba(18,18,22,.99);
+}
+
+/* Derived highlight colors from selection color */
 @supports (background: color-mix(in srgb, #000 50%, transparent)) {
-  :root, body[data-theme]{
-    --word: color-mix(in srgb, var(--sel) 18%, transparent);
+  body{
     --word-ok: color-mix(in srgb, var(--sel) 30%, transparent);
+    --wordHalo: color-mix(in srgb, var(--sel) 20%, transparent);
+    --outlineSoft: color-mix(in srgb, var(--sel) 55%, transparent);
+  }
+}
+@supports not (background: color-mix(in srgb, #000 50%, transparent)) {
+  body{
+    --word-ok: rgba(0,110,255,.26);
+    --wordHalo: rgba(0,110,255,.18);
+    --outlineSoft: rgba(0,110,255,.55);
   }
 }
 
 *{box-sizing:border-box;}
 html,body{height:100%;}
 body{
-  margin:0;
   background:var(--bg);
   color:var(--text);
-  font-family:system-ui,-apple-system,Segoe UI,Roboto,Helvetica,Arial,sans-serif;
-  overflow:hidden;
 }
+
+.hidden{display:none!important;}
+.muted{color:var(--muted);font-size:13px;}
 
 .view{
   height:100vh;
@@ -130,12 +196,9 @@ body{
   overflow:hidden;
 }
 
-.hidden{display:none!important;}
-.muted{color:var(--muted);font-size:13px;}
-
 h1{margin:0;font-size:20px;letter-spacing:.2px;}
 
-/* ===== HOME HEADER LAYOUT ===== */
+/* ===== HOME HEADER ===== */
 
 .homeTop{
   display:flex;
@@ -143,28 +206,25 @@ h1{margin:0;font-size:20px;letter-spacing:.2px;}
   justify-content:space-between;
   gap:12px;
   margin-bottom:10px;
-  flex-wrap:nowrap; /* never wrap */
+  flex-wrap:nowrap;
 }
-
 .homeLeft{
   display:flex;
   align-items:center;
   gap:10px;
-  min-width:0; /* allow title to shrink */
+  min-width:0;
   flex:1 1 auto;
 }
-
 .homeTitle{
   display:grid;
   gap:4px;
   min-width:0;
 }
-
 .homeActions{
   display:flex;
   gap:10px;
   align-items:center;
-  flex-wrap:nowrap; /* never wrap */
+  flex-wrap:nowrap;
   flex:0 0 auto;
 }
 
@@ -174,9 +234,8 @@ h1{margin:0;font-size:20px;letter-spacing:.2px;}
   color:var(--text);
   padding:10px 12px;
   border-radius:999px;
-  white-space:nowrap; /* keep labels single-line */
+  white-space:nowrap;
 }
-
 .iconChip{
   width:44px;
   text-align:center;
@@ -184,7 +243,6 @@ h1{margin:0;font-size:20px;letter-spacing:.2px;}
   flex:0 0 auto;
 }
 
-/* if very narrow screens, slightly tighten */
 @media (max-width: 360px){
   .homeActions{gap:8px;}
   .chip{padding:9px 10px;}
@@ -269,12 +327,13 @@ h1{margin:0;font-size:20px;letter-spacing:.2px;}
 
 .grid{
   display:grid;
-  gap:1px;
+  gap:var(--cell-gap);
   background:var(--grid-line);
   border-radius:10px;
-  padding:1px;
+  padding:var(--grid-pad);
   touch-action:manipulation;
   user-select:none;
+  position:relative;
 }
 
 .cell{
@@ -290,30 +349,40 @@ h1{margin:0;font-size:20px;letter-spacing:.2px;}
   position:relative;
   z-index:0;
 }
-
 .cell.block{background:var(--block-bg);color:transparent;}
+.cell.wordOk{ background: var(--word-ok); }
 
-/* Correct words: theme color fill */
-.cell.wordOk{
-  background:var(--word-ok);
+/* Selection overlays */
+.wordOutline{
+  position:absolute;
+  z-index:5;
+  border:3px solid var(--sel);
+  border-radius:8px;
+  box-shadow: 0 0 0 2px var(--wordHalo);
+  pointer-events:none;
 }
 
-/* Selected word: outline only (so wordOk fill still shows) */
-.cell.word{
-  box-shadow: inset 0 0 0 2px var(--sel);
-}
-
-/* Selected cell: very visible outline + halo */
-.cell.selected{
-  outline:3px solid var(--sel);
-  outline-offset:-3px;
+.cellOutline{
+  position:absolute;
+  z-index:6;
+  border:3px solid rgba(0,0,0,.25);
+  border-radius:6px;
   box-shadow:
     inset 0 0 0 3px var(--sel),
-    0 0 0 2px var(--word);
+    0 0 0 2px var(--outlineSoft);
+  pointer-events:none;
 }
 
-/* avoid outlines when modals open */
-body.modalOpen .cell.selected{ outline:none; box-shadow:none; }
+/* make the selected cell readable but don’t fight overlays */
+.cell.selected{
+  /* no visual here; overlays handle it */
+}
+
+/* hide overlays when modal open */
+body.modalOpen .wordOutline,
+body.modalOpen .cellOutline{
+  display:none !important;
+}
 
 .kbd{position:absolute;left:-9999px;top:-9999px;width:1px;height:1px;opacity:0;}
 
@@ -346,7 +415,7 @@ body.modalOpen .cell.selected{ outline:none; box-shadow:none; }
   font-weight:1000;
   letter-spacing:1.4px;
   text-transform:uppercase;
-  background:linear-gradient(90deg, var(--word), var(--word-ok));
+  background:linear-gradient(90deg, var(--wordHalo), var(--word-ok));
 }
 .sheetBody{padding:0 14px 12px;color:var(--muted);}
 .sheetDivider{height:1px;background:var(--line);}
@@ -363,3 +432,47 @@ body.modalOpen .cell.selected{ outline:none; box-shadow:none; }
 }
 .sheetCancel{text-align:center;color:var(--muted);}
 .sheetItem.danger{color:rgba(200,40,40,.92);}
+
+/* Theme switch row */
+.themeSwitchRow{
+  display:grid;
+  grid-template-columns: 1fr auto auto;
+  align-items:center;
+  gap:10px;
+  padding: 0 14px 12px;
+}
+.themeSwitchLabel{ color: var(--muted); font-size:13px; }
+.themeSwitchValue{ color: var(--muted); font-size:13px; min-width:42px; text-align:right; }
+
+.themeSwitch{
+  position:relative;
+  display:inline-block;
+  width:52px;
+  height:28px;
+}
+.themeSwitch input{
+  opacity:0;
+  width:0;
+  height:0;
+}
+.themeSwitchPill{
+  position:absolute;
+  inset:0;
+  border-radius:999px;
+  border:1px solid var(--line);
+  background:var(--panel);
+}
+.themeSwitchPill::after{
+  content:"";
+  position:absolute;
+  top:3px;
+  left:3px;
+  width:22px;
+  height:22px;
+  border-radius:999px;
+  background:var(--sel);
+  transition: transform .18s ease;
+}
+.themeSwitch input:checked + .themeSwitchPill::after{
+  transform: translateX(24px);
+}
