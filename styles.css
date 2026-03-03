@@ -6,179 +6,10 @@
   --grid-pad: 1px;
 }
 
-/* ===========================
-   THEME SYSTEM
-   data-theme-base: blackwhite|sage|lavender|ocean|sand
-   data-theme-mode: light|dark
-=========================== */
+body{ margin:0; overflow:hidden; font-family:system-ui,-apple-system,Segoe UI,Roboto,Helvetica,Arial,sans-serif; }
+*{ box-sizing:border-box; }
+html,body{ height:100%; }
 
-body{
-  margin:0;
-  overflow:hidden;
-  font-family:system-ui,-apple-system,Segoe UI,Roboto,Helvetica,Arial,sans-serif;
-}
-
-/* Default: Black & White Light */
-body[data-theme-base="blackwhite"][data-theme-mode="light"],
-body:not([data-theme-base]){
-  color-scheme: light;
-
-  --bg:#f1f4ff;
-  --panel:#ffffff;
-
-  --line:rgba(20,20,40,.28);
-  --grid-line:rgba(20,20,40,.26);
-
-  --text:rgba(14,14,22,.96);
-  --muted:rgba(14,14,22,.62);
-
-  --cell-bg:rgba(255,255,255,.94);
-  --cell-text:rgba(14,14,22,.95);
-  --block-bg:rgba(0,0,0,.24);
-
-  --sel:rgba(0,110,255,.95);
-
-  --sheet-dim:rgba(0,0,0,.24);
-  --sheet-bg:rgba(255,255,255,.99);
-}
-
-/* Black & White Dark (your prior dark theme) */
-body[data-theme-base="blackwhite"][data-theme-mode="dark"]{
-  color-scheme: dark;
-
-  --bg:#0e0f14;
-  --panel:rgba(255,255,255,.07);
-
-  --line:rgba(255,255,255,.20);
-  --grid-line:rgba(255,255,255,.20);
-
-  --text:rgba(255,255,255,.94);
-  --muted:rgba(255,255,255,.68);
-
-  --cell-bg:rgba(255,255,255,.10);
-  --cell-text:rgba(255,255,255,.95);
-  --block-bg:rgba(255,255,255,.30);
-
-  --sel:rgba(140,190,255,.98);
-
-  --sheet-dim:rgba(0,0,0,.46);
-  --sheet-bg:rgba(18,18,22,.99);
-}
-
-/* Sage Light */
-body[data-theme-base="sage"][data-theme-mode="light"]{
-  color-scheme: light;
-  --bg:#e6f3ec; --panel:#fff;
-  --line:rgba(18,42,30,.24); --grid-line:rgba(18,42,30,.24);
-  --text:rgba(10,20,15,.96); --muted:rgba(10,20,15,.62);
-  --cell-bg:rgba(255,255,255,.94); --cell-text:rgba(10,20,15,.95);
-  --block-bg:rgba(10,20,15,.26);
-  --sel:rgba(16,140,88,.96);
-  --sheet-dim:rgba(0,0,0,.22); --sheet-bg:rgba(255,255,255,.99);
-}
-
-/* Sage Dark */
-body[data-theme-base="sage"][data-theme-mode="dark"]{
-  color-scheme: dark;
-  --bg:#0c1411; --panel:rgba(255,255,255,.07);
-  --line:rgba(255,255,255,.18); --grid-line:rgba(255,255,255,.18);
-  --text:rgba(255,255,255,.92); --muted:rgba(255,255,255,.66);
-  --cell-bg:rgba(255,255,255,.10); --cell-text:rgba(255,255,255,.95);
-  --block-bg:rgba(255,255,255,.28);
-  --sel:rgba(120,230,180,.92);
-  --sheet-dim:rgba(0,0,0,.46); --sheet-bg:rgba(18,18,22,.99);
-}
-
-/* Lavender Light */
-body[data-theme-base="lavender"][data-theme-mode="light"]{
-  color-scheme: light;
-  --bg:#eee8ff; --panel:#fff;
-  --line:rgba(48,26,86,.24); --grid-line:rgba(48,26,86,.24);
-  --text:rgba(26,16,48,.96); --muted:rgba(26,16,48,.62);
-  --cell-bg:rgba(255,255,255,.94); --cell-text:rgba(26,16,48,.95);
-  --block-bg:rgba(26,16,48,.24);
-  --sel:rgba(108,72,235,.96);
-  --sheet-dim:rgba(0,0,0,.22); --sheet-bg:rgba(255,255,255,.99);
-}
-
-/* Lavender Dark */
-body[data-theme-base="lavender"][data-theme-mode="dark"]{
-  color-scheme: dark;
-  --bg:#141022; --panel:rgba(255,255,255,.07);
-  --line:rgba(255,255,255,.18); --grid-line:rgba(255,255,255,.18);
-  --text:rgba(255,255,255,.92); --muted:rgba(255,255,255,.66);
-  --cell-bg:rgba(255,255,255,.10); --cell-text:rgba(255,255,255,.95);
-  --block-bg:rgba(255,255,255,.28);
-  --sel:rgba(190,160,255,.94);
-  --sheet-dim:rgba(0,0,0,.46); --sheet-bg:rgba(18,18,22,.99);
-}
-
-/* Ocean Light */
-body[data-theme-base="ocean"][data-theme-mode="light"]{
-  color-scheme: light;
-  --bg:#e3f2ff; --panel:#fff;
-  --line:rgba(10,50,85,.24); --grid-line:rgba(10,50,85,.24);
-  --text:rgba(10,25,45,.96); --muted:rgba(10,25,45,.62);
-  --cell-bg:rgba(255,255,255,.94); --cell-text:rgba(10,25,45,.95);
-  --block-bg:rgba(10,25,45,.24);
-  --sel:rgba(0,120,195,.96);
-  --sheet-dim:rgba(0,0,0,.22); --sheet-bg:rgba(255,255,255,.99);
-}
-
-/* Ocean Dark */
-body[data-theme-base="ocean"][data-theme-mode="dark"]{
-  color-scheme: dark;
-  --bg:#07131c; --panel:rgba(255,255,255,.07);
-  --line:rgba(255,255,255,.18); --grid-line:rgba(255,255,255,.18);
-  --text:rgba(255,255,255,.92); --muted:rgba(255,255,255,.66);
-  --cell-bg:rgba(255,255,255,.10); --cell-text:rgba(255,255,255,.95);
-  --block-bg:rgba(255,255,255,.28);
-  --sel:rgba(120,200,255,.94);
-  --sheet-dim:rgba(0,0,0,.46); --sheet-bg:rgba(18,18,22,.99);
-}
-
-/* Sand Light */
-body[data-theme-base="sand"][data-theme-mode="light"]{
-  color-scheme: light;
-  --bg:#ffedd3; --panel:#fff;
-  --line:rgba(78,54,20,.24); --grid-line:rgba(78,54,20,.24);
-  --text:rgba(38,25,10,.96); --muted:rgba(38,25,10,.62);
-  --cell-bg:rgba(255,255,255,.94); --cell-text:rgba(38,25,10,.95);
-  --block-bg:rgba(38,25,10,.28);
-  --sel:rgba(210,120,35,.96);
-  --sheet-dim:rgba(0,0,0,.22); --sheet-bg:rgba(255,255,255,.99);
-}
-
-/* Sand Dark */
-body[data-theme-base="sand"][data-theme-mode="dark"]{
-  color-scheme: dark;
-  --bg:#1a120a; --panel:rgba(255,255,255,.07);
-  --line:rgba(255,255,255,.18); --grid-line:rgba(255,255,255,.18);
-  --text:rgba(255,255,255,.92); --muted:rgba(255,255,255,.66);
-  --cell-bg:rgba(255,255,255,.10); --cell-text:rgba(255,255,255,.95);
-  --block-bg:rgba(255,255,255,.28);
-  --sel:rgba(255,190,120,.94);
-  --sheet-dim:rgba(0,0,0,.46); --sheet-bg:rgba(18,18,22,.99);
-}
-
-/* Derived highlight colors from selection color */
-@supports (background: color-mix(in srgb, #000 50%, transparent)) {
-  body{
-    --word-ok: color-mix(in srgb, var(--sel) 30%, transparent);
-    --wordHalo: color-mix(in srgb, var(--sel) 20%, transparent);
-    --outlineSoft: color-mix(in srgb, var(--sel) 55%, transparent);
-  }
-}
-@supports not (background: color-mix(in srgb, #000 50%, transparent)) {
-  body{
-    --word-ok: rgba(0,110,255,.26);
-    --wordHalo: rgba(0,110,255,.18);
-    --outlineSoft: rgba(0,110,255,.55);
-  }
-}
-
-*{box-sizing:border-box;}
-html,body{height:100%;}
 body{
   background:var(--bg);
   color:var(--text);
@@ -198,7 +29,176 @@ body{
 
 h1{margin:0;font-size:20px;letter-spacing:.2px;}
 
-/* ===== HOME HEADER ===== */
+/* ===========================
+   THEMES
+=========================== */
+
+/* Black & White Light */
+body[data-theme-base="blackwhite"][data-theme-mode="light"],
+body:not([data-theme-base]){
+  color-scheme: light;
+  --bg:#f1f4ff;
+  --panel:#ffffff;
+
+  --line:rgba(20,20,40,.28);
+  --grid-line:rgba(20,20,40,.26);
+
+  --text:rgba(14,14,22,.96);
+  --muted:rgba(14,14,22,.62);
+
+  --cell-bg:rgba(255,255,255,.94);
+  --cell-text:rgba(14,14,22,.95);
+  --block-bg:rgba(0,0,0,.24);
+
+  --sel:rgba(0,110,255,.95);
+
+  --sheet-dim:rgba(0,0,0,.24);
+  --sheet-bg:rgba(255,255,255,.99);
+}
+
+/* Black & White Dark */
+body[data-theme-base="blackwhite"][data-theme-mode="dark"]{
+  color-scheme: dark;
+
+  /* slightly lighter than before */
+  --bg:#151722;
+  --panel:rgba(255,255,255,.10);
+
+  --line:rgba(255,255,255,.22);
+  --grid-line:rgba(255,255,255,.22);
+
+  --text:rgba(255,255,255,.94);
+  --muted:rgba(255,255,255,.70);
+
+  --cell-bg:rgba(255,255,255,.12);
+  --cell-text:rgba(255,255,255,.96);
+  --block-bg:rgba(255,255,255,.28);
+
+  --sel:rgba(150,205,255,.98);
+
+  --sheet-dim:rgba(0,0,0,.46);
+  --sheet-bg:rgba(24,24,30,.99);
+}
+
+/* Sage Light */
+body[data-theme-base="sage"][data-theme-mode="light"]{
+  color-scheme: light;
+  --bg:#e6f3ec; --panel:#fff;
+  --line:rgba(18,42,30,.24); --grid-line:rgba(18,42,30,.24);
+  --text:rgba(10,20,15,.96); --muted:rgba(10,20,15,.62);
+  --cell-bg:rgba(255,255,255,.94); --cell-text:rgba(10,20,15,.95);
+  --block-bg:rgba(10,20,15,.26);
+  --sel:rgba(16,140,88,.96);
+  --sheet-dim:rgba(0,0,0,.22); --sheet-bg:rgba(255,255,255,.99);
+}
+
+/* Sage Dark (LIGHTENED) */
+body[data-theme-base="sage"][data-theme-mode="dark"]{
+  color-scheme: dark;
+  --bg:#17231e;
+  --panel:rgba(255,255,255,.10);
+  --line:rgba(255,255,255,.20); --grid-line:rgba(255,255,255,.20);
+  --text:rgba(255,255,255,.93); --muted:rgba(255,255,255,.70);
+  --cell-bg:rgba(255,255,255,.12); --cell-text:rgba(255,255,255,.96);
+  --block-bg:rgba(255,255,255,.26);
+  --sel:rgba(140,235,195,.92);
+  --sheet-dim:rgba(0,0,0,.42); --sheet-bg:rgba(24,24,30,.99);
+}
+
+/* Lavender Light */
+body[data-theme-base="lavender"][data-theme-mode="light"]{
+  color-scheme: light;
+  --bg:#eee8ff; --panel:#fff;
+  --line:rgba(48,26,86,.24); --grid-line:rgba(48,26,86,.24);
+  --text:rgba(26,16,48,.96); --muted:rgba(26,16,48,.62);
+  --cell-bg:rgba(255,255,255,.94); --cell-text:rgba(26,16,48,.95);
+  --block-bg:rgba(26,16,48,.24);
+  --sel:rgba(108,72,235,.96);
+  --sheet-dim:rgba(0,0,0,.22); --sheet-bg:rgba(255,255,255,.99);
+}
+
+/* Lavender Dark (LIGHTENED) */
+body[data-theme-base="lavender"][data-theme-mode="dark"]{
+  color-scheme: dark;
+  --bg:#1f1b33;
+  --panel:rgba(255,255,255,.10);
+  --line:rgba(255,255,255,.20); --grid-line:rgba(255,255,255,.20);
+  --text:rgba(255,255,255,.93); --muted:rgba(255,255,255,.70);
+  --cell-bg:rgba(255,255,255,.12); --cell-text:rgba(255,255,255,.96);
+  --block-bg:rgba(255,255,255,.26);
+  --sel:rgba(205,180,255,.94);
+  --sheet-dim:rgba(0,0,0,.42); --sheet-bg:rgba(24,24,30,.99);
+}
+
+/* Ocean Light */
+body[data-theme-base="ocean"][data-theme-mode="light"]{
+  color-scheme: light;
+  --bg:#e3f2ff; --panel:#fff;
+  --line:rgba(10,50,85,.24); --grid-line:rgba(10,50,85,.24);
+  --text:rgba(10,25,45,.96); --muted:rgba(10,25,45,.62);
+  --cell-bg:rgba(255,255,255,.94); --cell-text:rgba(10,25,45,.95);
+  --block-bg:rgba(10,25,45,.24);
+  --sel:rgba(0,120,195,.96);
+  --sheet-dim:rgba(0,0,0,.22); --sheet-bg:rgba(255,255,255,.99);
+}
+
+/* Ocean Dark (LIGHTENED) */
+body[data-theme-base="ocean"][data-theme-mode="dark"]{
+  color-scheme: dark;
+  --bg:#152332;
+  --panel:rgba(255,255,255,.10);
+  --line:rgba(255,255,255,.20); --grid-line:rgba(255,255,255,.20);
+  --text:rgba(255,255,255,.93); --muted:rgba(255,255,255,.70);
+  --cell-bg:rgba(255,255,255,.12); --cell-text:rgba(255,255,255,.96);
+  --block-bg:rgba(255,255,255,.26);
+  --sel:rgba(150,215,255,.94);
+  --sheet-dim:rgba(0,0,0,.42); --sheet-bg:rgba(24,24,30,.99);
+}
+
+/* Sand Light */
+body[data-theme-base="sand"][data-theme-mode="light"]{
+  color-scheme: light;
+  --bg:#ffedd3; --panel:#fff;
+  --line:rgba(78,54,20,.24); --grid-line:rgba(78,54,20,.24);
+  --text:rgba(38,25,10,.96); --muted:rgba(38,25,10,.62);
+  --cell-bg:rgba(255,255,255,.94); --cell-text:rgba(38,25,10,.95);
+  --block-bg:rgba(38,25,10,.28);
+  --sel:rgba(210,120,35,.96);
+  --sheet-dim:rgba(0,0,0,.22); --sheet-bg:rgba(255,255,255,.99);
+}
+
+/* Sand Dark (LIGHTENED) */
+body[data-theme-base="sand"][data-theme-mode="dark"]{
+  color-scheme: dark;
+  --bg:#231a12;
+  --panel:rgba(255,255,255,.10);
+  --line:rgba(255,255,255,.20); --grid-line:rgba(255,255,255,.20);
+  --text:rgba(255,255,255,.93); --muted:rgba(255,255,255,.70);
+  --cell-bg:rgba(255,255,255,.12); --cell-text:rgba(255,255,255,.96);
+  --block-bg:rgba(255,255,255,.26);
+  --sel:rgba(255,205,150,.94);
+  --sheet-dim:rgba(0,0,0,.42); --sheet-bg:rgba(24,24,30,.99);
+}
+
+/* Derived highlight colors */
+@supports (background: color-mix(in srgb, #000 50%, transparent)) {
+  body{
+    --word-ok: color-mix(in srgb, var(--sel) 30%, transparent);
+    --wordHalo: color-mix(in srgb, var(--sel) 22%, transparent);
+    --outlineSoft: color-mix(in srgb, var(--sel) 60%, transparent);
+  }
+}
+@supports not (background: color-mix(in srgb, #000 50%, transparent)) {
+  body{
+    --word-ok: rgba(0,110,255,.26);
+    --wordHalo: rgba(0,110,255,.18);
+    --outlineSoft: rgba(0,110,255,.60);
+  }
+}
+
+/* ===========================
+   HOME HEADER
+=========================== */
 
 .homeTop{
   display:flex;
@@ -215,11 +215,7 @@ h1{margin:0;font-size:20px;letter-spacing:.2px;}
   min-width:0;
   flex:1 1 auto;
 }
-.homeTitle{
-  display:grid;
-  gap:4px;
-  min-width:0;
-}
+.homeTitle{ display:grid; gap:4px; min-width:0; }
 .homeActions{
   display:flex;
   gap:10px;
@@ -242,7 +238,6 @@ h1{margin:0;font-size:20px;letter-spacing:.2px;}
   padding:10px 0;
   flex:0 0 auto;
 }
-
 @media (max-width: 360px){
   .homeActions{gap:8px;}
   .chip{padding:9px 10px;}
@@ -275,7 +270,9 @@ h1{margin:0;font-size:20px;letter-spacing:.2px;}
 .card small{color:var(--muted);}
 .pct{font-variant-numeric:tabular-nums;}
 
-/* ===== PUZZLE ===== */
+/* ===========================
+   PUZZLE
+=========================== */
 
 #puzzleView{
   padding:0;
@@ -293,15 +290,22 @@ h1{margin:0;font-size:20px;letter-spacing:.2px;}
   border-bottom:1px solid var(--line);
   background:var(--panel);
 }
+.topbarLeft{ display:flex; align-items:center; gap:10px; }
 .brandMini{font-weight:900;letter-spacing:.7px;opacity:.92;}
 .timer{justify-self:center;font-variant-numeric:tabular-nums;font-weight:900;letter-spacing:.6px;}
 .topbarRight{display:flex;gap:8px;align-items:center;}
+
 .iconBtn{
   border:1px solid var(--line);
   background:transparent;
   color:var(--text);
   padding:7px 10px;
   border-radius:12px;
+}
+.iconChipTop{
+  width:44px;
+  text-align:center;
+  padding:7px 0;
 }
 
 .clueBar{
@@ -352,33 +356,27 @@ h1{margin:0;font-size:20px;letter-spacing:.2px;}
 .cell.block{background:var(--block-bg);color:transparent;}
 .cell.wordOk{ background: var(--word-ok); }
 
-/* Selection overlays */
+/* Selection overlays (very visible) */
 .wordOutline{
   position:absolute;
-  z-index:5;
-  border:3px solid var(--sel);
-  border-radius:8px;
-  box-shadow: 0 0 0 2px var(--wordHalo);
+  z-index:8;
+  border:4px solid var(--sel);
+  border-radius:10px;
+  box-shadow: 0 0 0 3px var(--wordHalo);
   pointer-events:none;
 }
 
 .cellOutline{
   position:absolute;
-  z-index:6;
-  border:3px solid rgba(0,0,0,.25);
-  border-radius:6px;
+  z-index:9;
+  border:3px solid rgba(0,0,0,.28);
+  border-radius:8px;
   box-shadow:
-    inset 0 0 0 3px var(--sel),
-    0 0 0 2px var(--outlineSoft);
+    inset 0 0 0 4px var(--sel),
+    0 0 0 3px var(--outlineSoft);
   pointer-events:none;
 }
 
-/* make the selected cell readable but don’t fight overlays */
-.cell.selected{
-  /* no visual here; overlays handle it */
-}
-
-/* hide overlays when modal open */
 body.modalOpen .wordOutline,
 body.modalOpen .cellOutline{
   display:none !important;
@@ -386,7 +384,9 @@ body.modalOpen .cellOutline{
 
 .kbd{position:absolute;left:-9999px;top:-9999px;width:1px;height:1px;opacity:0;}
 
-/* ===== SHEETS ===== */
+/* ===========================
+   SHEETS
+=========================== */
 
 .sheet{
   position:fixed;
@@ -444,20 +444,10 @@ body.modalOpen .cellOutline{
 .themeSwitchLabel{ color: var(--muted); font-size:13px; }
 .themeSwitchValue{ color: var(--muted); font-size:13px; min-width:42px; text-align:right; }
 
-.themeSwitch{
-  position:relative;
-  display:inline-block;
-  width:52px;
-  height:28px;
-}
-.themeSwitch input{
-  opacity:0;
-  width:0;
-  height:0;
-}
+.themeSwitch{ position:relative; display:inline-block; width:52px; height:28px; }
+.themeSwitch input{ opacity:0; width:0; height:0; }
 .themeSwitchPill{
-  position:absolute;
-  inset:0;
+  position:absolute; inset:0;
   border-radius:999px;
   border:1px solid var(--line);
   background:var(--panel);
@@ -465,14 +455,10 @@ body.modalOpen .cellOutline{
 .themeSwitchPill::after{
   content:"";
   position:absolute;
-  top:3px;
-  left:3px;
-  width:22px;
-  height:22px;
+  top:3px; left:3px;
+  width:22px; height:22px;
   border-radius:999px;
   background:var(--sel);
   transition: transform .18s ease;
 }
-.themeSwitch input:checked + .themeSwitchPill::after{
-  transform: translateX(24px);
-}
+.themeSwitch input:checked + .themeSwitchPill::after{ transform: translateX(24px); }
