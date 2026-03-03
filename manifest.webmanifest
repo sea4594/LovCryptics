@@ -1,6 +1,6 @@
 {
-  "name": "LovCryptic",
-  "short_name": "LovCryptic",
+  "name": "LovCryptics",
+  "short_name": "LovCryptics",
   "start_url": "./",
   "display": "standalone",
   "background_color": "#f6f7fb",
