@@ -707,7 +707,13 @@ async function exitPuzzle() {
   puzzleView.classList.add("hidden");
   homeView.classList.remove("hidden");
 
+  try {
   await normalizeOrphanRunningTimers();
+} catch (e) {
+  console.error(e);
+  homeStatusEl.textContent = "Storage unavailable (IndexedDB blocked)";
+  // continue so the UI still becomes interactive
+}
   await renderHome();
 
   // push progress if logged in
