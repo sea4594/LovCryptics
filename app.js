@@ -7,7 +7,7 @@ import * as idb from "./idb.js";
 const PSID_DEFAULT = "100000160";
 
 // Put your Google OAuth Client ID here:
-const GOOGLE_CLIENT_ID = "PASTE_YOUR_CLIENT_ID_HERE.apps.googleusercontent.com";
+const GOOGLE_CLIENT_ID = "36850930626-iunbe4q4pds4ouea93f39rjqkk1icgs0.apps.googleusercontent.com";
 
 // Drive scope for appDataFolder storage (hidden app storage)
 const DRIVE_SCOPE = "https://www.googleapis.com/auth/drive.appdata";
