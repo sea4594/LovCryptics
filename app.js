@@ -5,21 +5,29 @@ import * as idb from "./idb.js";
 =========================== */
 
 const PSID_DEFAULT = "100000160";
+
 const GOOGLE_CLIENT_ID =
   "36850930626-iunbe4q4pds4ouea93f39rjqkk1icgs0.apps.googleusercontent.com";
+
 const DRIVE_SCOPE = "https://www.googleapis.com/auth/drive.appdata";
 
 const FETCH_TIMEOUT_MS = 8000;
 const INDEX_REFRESH_EVERY_MS = 30 * 60 * 1000;
 
-const DRIVE_PROGRESS_FILENAME = "lovcryptic_progress_v1.json";
+const DRIVE_PROGRESS_FILENAME = "lovcryptics_progress_v1.json";
+
+// < 10s should be treated as "Not started"
+const STARTED_THRESHOLD_MS = 10_000;
 
 const LS = {
-  filter: "lovcrypticFilter",
-  sort: "lovcrypticSort",
-  theme: "lovcrypticTheme",
-  lastUpdated: "lovcrypticLastUpdated",
-  autoLogin: "lovcrypticGoogleAutoLogin", // "1" when user has granted consent once
+  filter: "lovcrypticsFilter",
+  sort: "lovcrypticsSort",
+  themeBase: "lovcrypticsThemeBase", // "blackwhite" | "sage" | ...
+  themeMode: "lovcrypticsThemeMode", // "light" | "dark"
+  lastUpdated: "lovcrypticsLastUpdated",
+  autoLogin: "lovcrypticsGoogleAutoLogin",
+  token: "lovcrypticsGoogleAccessToken",
+  tokenExp: "lovcrypticsGoogleAccessTokenExp", // epoch ms
 };
 
 /* ===========================
@@ -53,6 +61,9 @@ const logoutBtn = $("#logoutBtn");
 const accountLine = $("#accountLine");
 
 const themeMenu = $("#themeMenu");
+const themeModeToggle = $("#themeModeToggle");
+const themeModeLabel = $("#themeModeLabel");
+
 const sortMenu = $("#sortMenu");
 const filterMenu = $("#filterMenu");
 
@@ -112,6 +123,13 @@ let driveFileId = null;
 let signedIn = false;
 
 /* ===========================
+   WORD OUTLINE OVERLAYS
+=========================== */
+
+let wordOutlineEl = null;
+let cellOutlineEl = null;
+
+/* ===========================
    INIT
 =========================== */
 
@@ -146,6 +164,12 @@ async function init() {
 
   loginBtn.addEventListener("click", async () => loginGoogle(true));
   logoutBtn.addEventListener("click", () => logoutGoogle());
+
+  // Theme mode toggle
+  themeModeToggle.addEventListener("change", () => {
+    const mode = themeModeToggle.checked ? "dark" : "light";
+    setThemeMode(mode);
+  });
 
   // Puzzle controls
   hintBtn.addEventListener("click", () => openSheet("hintMenu"));
@@ -183,10 +207,11 @@ async function init() {
       await renderHome();
     }
 
-    const t = e.target?.getAttribute?.("data-theme");
-    if (t) {
-      setTheme(t);
-      closeSheet("themeMenu");
+    const themeBase = e.target?.getAttribute?.("data-theme-base");
+    if (themeBase) {
+      setThemeBase(themeBase);
+      // keep menu open; user might toggle light/dark
+      return;
     }
   });
 
@@ -216,10 +241,10 @@ async function init() {
 
     if (!current.progress.wordChecks) {
       correctWordIds.clear();
-      clearAllGreen();
+      clearAllOk();
     } else {
       recomputeCorrectWords();
-      paintGreenFromSet();
+      paintOkFromSet();
     }
     await autosave(true);
   });
@@ -269,6 +294,7 @@ async function init() {
 
   window.addEventListener("resize", () => {
     if (current.spec) computeCellSize(current.spec.rows, current.spec.cols);
+    paintSelection(); // outlines depend on geometry
   });
 
   // Load index → metadata fast
@@ -278,11 +304,15 @@ async function init() {
 
   // Google
   await initGoogleTokenClient();
-  updateAccountUI();
 
-  // Silent “stay logged in” on refresh/reopen if previously granted
-  if (localStorage.getItem(LS.autoLogin) === "1") {
-    await loginGoogle(false); // no prompt
+  // Restore token on iOS/PWA relaunch (works until token expiry)
+  restoreTokenFromStorage();
+  updateAccountUI();
+  if (signedIn) {
+    pullProgressFromDrive().catch(() => {});
+  } else if (localStorage.getItem(LS.autoLogin) === "1") {
+    // On many iOS PWAs this needs a user gesture; we DO NOT force a popup here.
+    // But if token is still valid, restoreTokenFromStorage already covered it.
   }
 
   homeStatusEl.textContent = "Loaded";
@@ -295,7 +325,7 @@ async function init() {
 function sortLabel(mode) {
   if (mode === "oldest") return "Old → New";
   if (mode === "recent") return "Recent";
-  return "New → Old"; // newest
+  return "New → Old";
 }
 
 function filterLabel(mode) {
@@ -311,17 +341,29 @@ function updateSortFilterButtonLabels() {
 }
 
 /* ===========================
-   THEME + LABELS
+   THEME
 =========================== */
 
 function applySavedTheme() {
-  const t = localStorage.getItem(LS.theme) || "light";
-  setTheme(t);
+  const base = localStorage.getItem(LS.themeBase) || "blackwhite";
+  const mode = localStorage.getItem(LS.themeMode) || "light";
+  setThemeBase(base);
+  setThemeMode(mode);
+
+  themeModeToggle.checked = mode === "dark";
+  themeModeLabel.textContent = mode === "dark" ? "Dark" : "Light";
 }
 
-function setTheme(t) {
-  document.body.setAttribute("data-theme", t);
-  localStorage.setItem(LS.theme, t);
+function setThemeBase(base) {
+  document.body.setAttribute("data-theme-base", base);
+  localStorage.setItem(LS.themeBase, base);
+}
+
+function setThemeMode(mode) {
+  document.body.setAttribute("data-theme-mode", mode);
+  localStorage.setItem(LS.themeMode, mode);
+  themeModeToggle.checked = mode === "dark";
+  themeModeLabel.textContent = mode === "dark" ? "Dark" : "Light";
 }
 
 function applyLastUpdatedLabel() {
@@ -351,8 +393,8 @@ async function registerServiceWorker() {
     });
 
     navigator.serviceWorker.addEventListener("controllerchange", () => {
-      if (window.__lovcryptic_reloaded) return;
-      window.__lovcryptic_reloaded = true;
+      if (window.__lovcryptics_reloaded) return;
+      window.__lovcryptics_reloaded = true;
       window.location.reload();
     });
   } catch (e) {
@@ -374,20 +416,45 @@ async function initGoogleTokenClient() {
   tokenClient = window.google.accounts.oauth2.initTokenClient({
     client_id: GOOGLE_CLIENT_ID,
     scope: DRIVE_SCOPE,
-    callback: (resp) => {
-      if (resp?.access_token) {
-        accessToken = resp.access_token;
-        signedIn = true;
-        driveFileId = null;
-        localStorage.setItem(LS.autoLogin, "1");
-        updateAccountUI();
-        pullProgressFromDrive().catch(() => {});
-      }
-    },
+    callback: () => {}, // replaced per-request
   });
 }
 
-// interactive=true -> prompt consent; interactive=false -> silent (prompt:"")
+function storeToken(token, expiresInSeconds) {
+  accessToken = token;
+  signedIn = true;
+
+  // expires_in is typically present; if not, assume 50 minutes
+  const ttlMs = (Number(expiresInSeconds) || 3000) * 1000;
+  const exp = Date.now() + ttlMs - 20_000; // safety margin
+
+  localStorage.setItem(LS.token, token);
+  localStorage.setItem(LS.tokenExp, String(exp));
+  localStorage.setItem(LS.autoLogin, "1");
+}
+
+function clearStoredToken() {
+  localStorage.removeItem(LS.token);
+  localStorage.removeItem(LS.tokenExp);
+}
+
+function restoreTokenFromStorage() {
+  const tok = localStorage.getItem(LS.token);
+  const expRaw = localStorage.getItem(LS.tokenExp);
+  const exp = expRaw ? Number(expRaw) : 0;
+  if (tok && exp && Date.now() < exp) {
+    accessToken = tok;
+    signedIn = true;
+    return true;
+  }
+  // expired
+  accessToken = null;
+  signedIn = false;
+  return false;
+}
+
+// interactive=true -> prompt consent/login popup
+// interactive=false -> silent token refresh attempt (often requires user gesture on iOS PWA)
 async function loginGoogle(interactive) {
   if (!tokenClient) await initGoogleTokenClient();
   if (!tokenClient) {
@@ -395,24 +462,18 @@ async function loginGoogle(interactive) {
     return;
   }
 
-  const prompt = interactive ? "consent" : "";
   return new Promise((resolve) => {
-    const prev = tokenClient.callback;
     tokenClient.callback = (resp) => {
-      tokenClient.callback = prev;
       if (resp?.access_token) {
-        accessToken = resp.access_token;
-        signedIn = true;
+        storeToken(resp.access_token, resp.expires_in);
         driveFileId = null;
-        localStorage.setItem(LS.autoLogin, "1");
         updateAccountUI();
         pullProgressFromDrive().catch(() => {});
-      } else if (interactive) {
-        // interactive attempt failed/canceled; keep state unchanged
       }
       resolve();
     };
-    tokenClient.requestAccessToken({ prompt });
+
+    tokenClient.requestAccessToken({ prompt: interactive ? "consent" : "" });
   });
 }
 
@@ -421,6 +482,7 @@ function logoutGoogle() {
   signedIn = false;
   driveFileId = null;
   localStorage.removeItem(LS.autoLogin);
+  clearStoredToken();
   updateAccountUI();
 }
 
@@ -436,40 +498,27 @@ function updateAccountUI() {
   }
 }
 
-async function silentRefreshToken() {
-  // Only attempt if user has previously granted consent
-  if (!tokenClient) await initGoogleTokenClient();
-  if (!tokenClient) throw new Error("Token client not ready");
-  if (localStorage.getItem(LS.autoLogin) !== "1") throw new Error("No prior consent");
+async function ensureValidTokenOrThrow() {
+  if (restoreTokenFromStorage()) return;
 
-  return new Promise((resolve, reject) => {
-    const prev = tokenClient.callback;
-    tokenClient.callback = (resp) => {
-      tokenClient.callback = prev;
-      if (resp?.access_token) {
-        accessToken = resp.access_token;
-        signedIn = true;
-        updateAccountUI();
-        resolve();
-      } else {
-        accessToken = null;
-        signedIn = false;
-        updateAccountUI();
-        reject(new Error("Silent token refresh failed"));
-      }
-    };
-    tokenClient.requestAccessToken({ prompt: "" });
-  });
+  // if token expired, try silent refresh; on iOS PWA this may fail without a gesture
+  if (localStorage.getItem(LS.autoLogin) !== "1") throw new Error("Not signed in");
+
+  await loginGoogle(false);
+
+  if (!signedIn || !accessToken) throw new Error("Not signed in");
 }
 
 /* ===========================
    DRIVE APPDATA PROGRESS
 =========================== */
 
-async function driveRequest(url, opts = {}, _retry = true) {
-  if (!accessToken) throw new Error("Not signed in");
+async function driveRequest(url, opts = {}, retry = true) {
+  await ensureValidTokenOrThrow();
+
   const ctrl = new AbortController();
   const t = setTimeout(() => ctrl.abort(), 15000);
+
   try {
     const res = await fetch(url, {
       ...opts,
@@ -480,13 +529,17 @@ async function driveRequest(url, opts = {}, _retry = true) {
       },
     });
 
-    // If token expired, try one silent refresh and retry once
-    if ((res.status === 401 || res.status === 403) && _retry) {
+    // token invalid → clear stored token and retry once (may require user gesture on iOS)
+    if ((res.status === 401 || res.status === 403) && retry) {
+      clearStoredToken();
+      accessToken = null;
+      signedIn = false;
+      updateAccountUI();
       try {
-        await silentRefreshToken();
+        await ensureValidTokenOrThrow();
         return driveRequest(url, opts, false);
       } catch {
-        // fall through to throw
+        // fallthrough to error
       }
     }
 
@@ -505,8 +558,10 @@ async function findOrCreateDriveFileId() {
 
   const q = encodeURIComponent(`name='${DRIVE_PROGRESS_FILENAME}' and trashed=false`);
   const url = `https://www.googleapis.com/drive/v3/files?spaces=appDataFolder&q=${q}&fields=files(id,name,modifiedTime)`;
+
   const res = await driveRequest(url);
   const js = await res.json();
+
   const file = js.files?.[0];
   if (file?.id) {
     driveFileId = file.id;
@@ -532,6 +587,7 @@ async function findOrCreateDriveFileId() {
       body,
     }
   );
+
   const created = await createRes.json();
   driveFileId = created.id;
   return driveFileId;
@@ -575,7 +631,8 @@ async function pullProgressFromDrive() {
 }
 
 async function pushProgressToDrive({ merge } = { merge: true }) {
-  if (!accessToken) return;
+  if (!signedIn) return;
+
   const fid = await findOrCreateDriveFileId();
 
   let base = { version: 1, updatedAt: Date.now(), progress: {} };
@@ -629,17 +686,15 @@ async function refreshIndexAndCache({ quiet }) {
     const existing = await idb.getAll("puzzles");
     const existingKeys = new Set(existing.map((p) => p.key));
 
-    let inserted = 0;
     for (const d of dates) {
       const key = `${psid}|${d}`;
       if (existingKeys.has(key)) continue;
       await idb.put("puzzles", { key, psid, date: d, fetchedAt: 0, data: null });
-      inserted++;
     }
 
     localStorage.setItem(LS.lastUpdated, new Date().toLocaleString());
     applyLastUpdatedLabel();
-    if (!quiet) homeStatusEl.textContent = inserted ? "Loaded" : (homeStatusEl.textContent || "Loaded");
+    if (!quiet) homeStatusEl.textContent = "Loaded";
   } catch (e) {
     console.error(e);
     const s = localStorage.getItem(LS.lastUpdated);
@@ -700,15 +755,21 @@ async function renderHome() {
   for (const it of items) {
     const { p, snap, isCompleted, timeMs } = it;
 
-    const startedByTime = timeMs > 0;
+    const startedByTime = timeMs >= STARTED_THRESHOLD_MS;
     const isNotStarted = !startedByTime;
 
     if (filterMode === "incomplete" && !(startedByTime && !isCompleted)) continue;
     if (filterMode === "completed" && !isCompleted) continue;
     if (filterMode === "not_started" && !isNotStarted) continue;
 
-    const status = isCompleted ? "Completed" : isNotStarted ? "Not started" : "In progress";
-    const timeLabel = isNotStarted ? "Not started" : fmtTime(timeMs);
+    let subtitle = "";
+    if (isCompleted) {
+      subtitle = `Completed • ${fmtTime(timeMs)}`;
+    } else if (isNotStarted) {
+      subtitle = "Not started";
+    } else {
+      subtitle = `In progress • ${fmtTime(timeMs)}`;
+    }
 
     const card = document.createElement("div");
     card.className = "card";
@@ -717,7 +778,7 @@ async function renderHome() {
 
     card.innerHTML = `<div>
         <div><b>${escapeHtml(p.date)}</b></div>
-        <small>${status} • ${timeLabel}</small>
+        <small>${escapeHtml(subtitle)}</small>
       </div>
       <div class="pct"><b>${snap.pct ?? 0}%</b></div>`;
 
@@ -796,6 +857,8 @@ async function openPuzzle(psid, date) {
   current = { key, psid, date, spec, progress, selected: null };
   puzzleOpen = true;
 
+  ensureOutlineEls();
+
   toggleChecksBtn.setAttribute("aria-pressed", String(!!progress.wordChecks));
   toggleChecksBtn.textContent = `Word checks: ${progress.wordChecks ? "On" : "Off"}`;
 
@@ -814,9 +877,9 @@ async function openPuzzle(psid, date) {
 
   if (progress.wordChecks) {
     recomputeCorrectWords();
-    paintGreenFromSet();
+    paintOkFromSet();
   } else {
-    clearAllGreen();
+    clearAllOk();
   }
 }
 
@@ -829,6 +892,8 @@ async function exitPuzzle() {
 
   stopClockLoop();
   timerEl.textContent = "00:00";
+
+  hideOutlines();
 
   puzzleView.classList.add("hidden");
   homeView.classList.remove("hidden");
@@ -845,7 +910,7 @@ async function restartPuzzle() {
   if (!current.spec) return;
 
   correctWordIds.clear();
-  clearAllGreen();
+  clearAllOk();
 
   current.progress = freshProgress(current.spec);
   current.progress.lastOpenedAt = Date.now();
@@ -854,6 +919,8 @@ async function restartPuzzle() {
   renderGrid(current.spec, current.progress);
   showClue(null);
   computeCellSize(current.spec.rows, current.spec.cols);
+
+  hideOutlines();
 
   await forceRestartTimer();
   await autosave(true);
@@ -1094,6 +1161,7 @@ function computeCellSize(rows, cols) {
 
   const cell = Math.max(20, Math.floor(Math.min(availW / cols, availH / rows)));
   gridEl.style.setProperty("--cell", `${cell}px`);
+  paintSelection();
 }
 
 /* ===========================
@@ -1143,24 +1211,100 @@ function setSelection(sel) {
   showCurrentClue();
 }
 
-function paintSelection() {
-  for (const el of gridEl.children) el.classList.remove("selected", "word");
+function ensureOutlineEls() {
+  if (wordOutlineEl && cellOutlineEl) return;
 
-  if (!current.selected) return;
+  wordOutlineEl = document.createElement("div");
+  wordOutlineEl.className = "wordOutline";
+  wordOutlineEl.setAttribute("aria-hidden", "true");
+
+  cellOutlineEl = document.createElement("div");
+  cellOutlineEl.className = "cellOutline";
+  cellOutlineEl.setAttribute("aria-hidden", "true");
+
+  // Ensure grid is positioning context
+  gridEl.style.position = "relative";
+  gridEl.appendChild(wordOutlineEl);
+  gridEl.appendChild(cellOutlineEl);
+
+  hideOutlines();
+}
+
+function hideOutlines() {
+  if (wordOutlineEl) wordOutlineEl.style.display = "none";
+  if (cellOutlineEl) cellOutlineEl.style.display = "none";
+}
+
+function paintSelection() {
+  // clear old per-cell selection class (we still mark selected cell for logic, but visuals via overlay)
+  for (const el of gridEl.querySelectorAll(".cell.selected")) el.classList.remove("selected");
+
+  if (!current.selected || !current.spec) {
+    hideOutlines();
+    return;
+  }
+  ensureOutlineEls();
 
   const { cellIndex, wordId } = current.selected;
 
-  const selEl = gridEl.querySelector(`[data-i="${cellIndex}"]`);
-  if (selEl) selEl.classList.add("selected");
+  const selCellEl = gridEl.querySelector(`.cell[data-i="${cellIndex}"]`);
+  if (selCellEl) selCellEl.classList.add("selected"); // used for accessibility/logic
 
-  if (wordId) {
-    const w = current.spec.wordMap.get(wordId);
-    if (w) {
-      for (const c of w.cells) {
-        const el = gridEl.querySelector(`[data-i="${c}"]`);
-        if (el) el.classList.add("word");
-      }
-    }
+  const w = wordId ? current.spec.wordMap.get(wordId) : null;
+  if (!w || !w.cells?.length) {
+    hideOutlines();
+    return;
+  }
+
+  const gridRect = gridEl.getBoundingClientRect();
+
+  // Word bounds: union of all cell rects in the word
+  let minL = Infinity, minT = Infinity, maxR = -Infinity, maxB = -Infinity;
+
+  for (const c of w.cells) {
+    const el = gridEl.querySelector(`.cell[data-i="${c}"]`);
+    if (!el) continue;
+    const r = el.getBoundingClientRect();
+    minL = Math.min(minL, r.left);
+    minT = Math.min(minT, r.top);
+    maxR = Math.max(maxR, r.right);
+    maxB = Math.max(maxB, r.bottom);
+  }
+
+  if (!isFinite(minL)) {
+    hideOutlines();
+    return;
+  }
+
+  // Selected cell bounds
+  const selRect = selCellEl ? selCellEl.getBoundingClientRect() : null;
+
+  // Position overlays relative to grid
+  const pad = 2; // makes the word outline slightly roomier
+  const left = Math.round(minL - gridRect.left - pad);
+  const top = Math.round(minT - gridRect.top - pad);
+  const width = Math.round((maxR - minL) + pad * 2);
+  const height = Math.round((maxB - minT) + pad * 2);
+
+  wordOutlineEl.style.display = "block";
+  wordOutlineEl.style.left = `${left}px`;
+  wordOutlineEl.style.top = `${top}px`;
+  wordOutlineEl.style.width = `${width}px`;
+  wordOutlineEl.style.height = `${height}px`;
+
+  if (selRect) {
+    const cl = Math.round(selRect.left - gridRect.left);
+    const ct = Math.round(selRect.top - gridRect.top);
+    const cw = Math.round(selRect.width);
+    const ch = Math.round(selRect.height);
+
+    cellOutlineEl.style.display = "block";
+    cellOutlineEl.style.left = `${cl}px`;
+    cellOutlineEl.style.top = `${ct}px`;
+    cellOutlineEl.style.width = `${cw}px`;
+    cellOutlineEl.style.height = `${ch}px`;
+  } else {
+    cellOutlineEl.style.display = "none";
   }
 }
 
@@ -1189,8 +1333,8 @@ function showClue(text) {
    WORD CHECKS
 =========================== */
 
-function clearAllGreen() {
-  for (const el of gridEl.children) el.classList.remove("wordOk");
+function clearAllOk() {
+  for (const el of gridEl.querySelectorAll(".cell.wordOk")) el.classList.remove("wordOk");
 }
 
 function recomputeCorrectWords() {
@@ -1200,15 +1344,15 @@ function recomputeCorrectWords() {
   }
 }
 
-function paintGreenFromSet() {
-  clearAllGreen();
+function paintOkFromSet() {
+  clearAllOk();
   if (!current.progress?.wordChecks) return;
 
   for (const id of correctWordIds) {
     const w = current.spec.wordMap.get(id);
     if (!w) continue;
     for (const c of w.cells) {
-      const el = gridEl.querySelector(`[data-i="${c}"]`);
+      const el = gridEl.querySelector(`.cell[data-i="${c}"]`);
       if (el) el.classList.add("wordOk");
     }
   }
@@ -1387,13 +1531,16 @@ function getCell(i) {
 
 function setCell(i, v) {
   current.progress.fills[i] = v;
-  const el = gridEl.querySelector(`[data-i="${i}"]`);
+  const el = gridEl.querySelector(`.cell[data-i="${i}"]`);
   if (el) el.textContent = v;
 
   if (current.progress.wordChecks) {
     recomputeCorrectWords();
-    paintGreenFromSet();
+    paintOkFromSet();
   }
+
+  // selection outlines remain stable, but keep them crisp after edits
+  paintSelection();
 }
 
 /* ===========================
