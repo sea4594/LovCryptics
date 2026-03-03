@@ -14,6 +14,14 @@ const INDEX_REFRESH_EVERY_MS = 30 * 60 * 1000;
 
 const DRIVE_PROGRESS_FILENAME = "lovcryptic_progress_v1.json";
 
+const LS = {
+  filter: "lovcrypticFilter",
+  sort: "lovcrypticSort",
+  theme: "lovcrypticTheme",
+  lastUpdated: "lovcrypticLastUpdated",
+  autoLogin: "lovcrypticGoogleAutoLogin", // "1" when user has granted consent once
+};
+
 /* ===========================
    DOM
 =========================== */
@@ -69,8 +77,8 @@ const restartYesBtn = $("#restartYesBtn");
    STATE
 =========================== */
 
-let filterMode = localStorage.getItem("lovcrypticFilter") || "all";
-let sortMode = localStorage.getItem("lovcrypticSort") || "newest";
+let filterMode = localStorage.getItem(LS.filter) || "all";
+let sortMode = localStorage.getItem(LS.sort) || "newest";
 
 let current = {
   key: null,
@@ -117,8 +125,8 @@ async function init() {
 
   applySavedTheme();
   applyLastUpdatedLabel();
+  updateSortFilterButtonLabels();
 
-  // Don’t let IDB issues brick the UI
   try {
     await normalizeOrphanRunningTimers();
   } catch (e) {
@@ -136,7 +144,7 @@ async function init() {
     openSheet("themeMenu");
   });
 
-  loginBtn.addEventListener("click", async () => loginGoogle());
+  loginBtn.addEventListener("click", async () => loginGoogle(true));
   logoutBtn.addEventListener("click", () => logoutGoogle());
 
   // Puzzle controls
@@ -160,7 +168,8 @@ async function init() {
     const s = e.target?.getAttribute?.("data-sort");
     if (s) {
       sortMode = s;
-      localStorage.setItem("lovcrypticSort", sortMode);
+      localStorage.setItem(LS.sort, sortMode);
+      updateSortFilterButtonLabels();
       closeSheet("sortMenu");
       await renderHome();
     }
@@ -168,7 +177,8 @@ async function init() {
     const f = e.target?.getAttribute?.("data-filter");
     if (f) {
       filterMode = f;
-      localStorage.setItem("lovcrypticFilter", filterMode);
+      localStorage.setItem(LS.filter, filterMode);
+      updateSortFilterButtonLabels();
       closeSheet("filterMenu");
       await renderHome();
     }
@@ -261,7 +271,7 @@ async function init() {
     if (current.spec) computeCellSize(current.spec.rows, current.spec.cols);
   });
 
-  // Load index → populate metadata fast (no mass prefetch)
+  // Load index → metadata fast
   await refreshIndexAndCache({ quiet: false });
   await renderHome();
   scheduleIndexRefresh();
@@ -270,7 +280,34 @@ async function init() {
   await initGoogleTokenClient();
   updateAccountUI();
 
+  // Silent “stay logged in” on refresh/reopen if previously granted
+  if (localStorage.getItem(LS.autoLogin) === "1") {
+    await loginGoogle(false); // no prompt
+  }
+
   homeStatusEl.textContent = "Loaded";
+}
+
+/* ===========================
+   SORT/FILTER LABELS
+=========================== */
+
+function sortLabel(mode) {
+  if (mode === "oldest") return "Old → New";
+  if (mode === "recent") return "Recent";
+  return "New → Old"; // newest
+}
+
+function filterLabel(mode) {
+  if (mode === "incomplete") return "In progress";
+  if (mode === "completed") return "Completed";
+  if (mode === "not_started") return "Not started";
+  return "All";
+}
+
+function updateSortFilterButtonLabels() {
+  sortBtn.textContent = sortLabel(sortMode);
+  filterBtn.textContent = filterLabel(filterMode);
 }
 
 /* ===========================
@@ -278,17 +315,17 @@ async function init() {
 =========================== */
 
 function applySavedTheme() {
-  const t = localStorage.getItem("lovcrypticTheme") || "light";
+  const t = localStorage.getItem(LS.theme) || "light";
   setTheme(t);
 }
 
 function setTheme(t) {
   document.body.setAttribute("data-theme", t);
-  localStorage.setItem("lovcrypticTheme", t);
+  localStorage.setItem(LS.theme, t);
 }
 
 function applyLastUpdatedLabel() {
-  const s = localStorage.getItem("lovcrypticLastUpdated");
+  const s = localStorage.getItem(LS.lastUpdated);
   if (s) homeStatusEl.textContent = `Updated ${s}`;
 }
 
@@ -342,6 +379,7 @@ async function initGoogleTokenClient() {
         accessToken = resp.access_token;
         signedIn = true;
         driveFileId = null;
+        localStorage.setItem(LS.autoLogin, "1");
         updateAccountUI();
         pullProgressFromDrive().catch(() => {});
       }
@@ -349,19 +387,40 @@ async function initGoogleTokenClient() {
   });
 }
 
-async function loginGoogle() {
+// interactive=true -> prompt consent; interactive=false -> silent (prompt:"")
+async function loginGoogle(interactive) {
   if (!tokenClient) await initGoogleTokenClient();
   if (!tokenClient) {
     alert("Google login not ready yet. Please refresh and try again.");
     return;
   }
-  tokenClient.requestAccessToken({ prompt: "consent" });
+
+  const prompt = interactive ? "consent" : "";
+  return new Promise((resolve) => {
+    const prev = tokenClient.callback;
+    tokenClient.callback = (resp) => {
+      tokenClient.callback = prev;
+      if (resp?.access_token) {
+        accessToken = resp.access_token;
+        signedIn = true;
+        driveFileId = null;
+        localStorage.setItem(LS.autoLogin, "1");
+        updateAccountUI();
+        pullProgressFromDrive().catch(() => {});
+      } else if (interactive) {
+        // interactive attempt failed/canceled; keep state unchanged
+      }
+      resolve();
+    };
+    tokenClient.requestAccessToken({ prompt });
+  });
 }
 
 function logoutGoogle() {
   accessToken = null;
   signedIn = false;
   driveFileId = null;
+  localStorage.removeItem(LS.autoLogin);
   updateAccountUI();
 }
 
@@ -377,11 +436,37 @@ function updateAccountUI() {
   }
 }
 
+async function silentRefreshToken() {
+  // Only attempt if user has previously granted consent
+  if (!tokenClient) await initGoogleTokenClient();
+  if (!tokenClient) throw new Error("Token client not ready");
+  if (localStorage.getItem(LS.autoLogin) !== "1") throw new Error("No prior consent");
+
+  return new Promise((resolve, reject) => {
+    const prev = tokenClient.callback;
+    tokenClient.callback = (resp) => {
+      tokenClient.callback = prev;
+      if (resp?.access_token) {
+        accessToken = resp.access_token;
+        signedIn = true;
+        updateAccountUI();
+        resolve();
+      } else {
+        accessToken = null;
+        signedIn = false;
+        updateAccountUI();
+        reject(new Error("Silent token refresh failed"));
+      }
+    };
+    tokenClient.requestAccessToken({ prompt: "" });
+  });
+}
+
 /* ===========================
    DRIVE APPDATA PROGRESS
 =========================== */
 
-async function driveRequest(url, opts = {}) {
+async function driveRequest(url, opts = {}, _retry = true) {
   if (!accessToken) throw new Error("Not signed in");
   const ctrl = new AbortController();
   const t = setTimeout(() => ctrl.abort(), 15000);
@@ -394,6 +479,17 @@ async function driveRequest(url, opts = {}) {
         Authorization: `Bearer ${accessToken}`,
       },
     });
+
+    // If token expired, try one silent refresh and retry once
+    if ((res.status === 401 || res.status === 403) && _retry) {
+      try {
+        await silentRefreshToken();
+        return driveRequest(url, opts, false);
+      } catch {
+        // fall through to throw
+      }
+    }
+
     if (!res.ok) {
       const txt = await res.text().catch(() => "");
       throw new Error(`Drive HTTP ${res.status}: ${txt}`);
@@ -530,7 +626,6 @@ async function refreshIndexAndCache({ quiet }) {
     const dates = Array.isArray(idx?.dates) ? idx.dates : [];
     const psid = String(idx?.psid || PSID_DEFAULT);
 
-    // Upsert metadata entries quickly (no puzzle JSON fetch here)
     const existing = await idb.getAll("puzzles");
     const existingKeys = new Set(existing.map((p) => p.key));
 
@@ -542,12 +637,12 @@ async function refreshIndexAndCache({ quiet }) {
       inserted++;
     }
 
-    localStorage.setItem("lovcrypticLastUpdated", new Date().toLocaleString());
+    localStorage.setItem(LS.lastUpdated, new Date().toLocaleString());
     applyLastUpdatedLabel();
     if (!quiet) homeStatusEl.textContent = inserted ? "Loaded" : (homeStatusEl.textContent || "Loaded");
   } catch (e) {
     console.error(e);
-    const s = localStorage.getItem("lovcrypticLastUpdated");
+    const s = localStorage.getItem(LS.lastUpdated);
     homeStatusEl.textContent = s ? `Updated ${s} (offline)` : "Offline";
   }
 }
@@ -592,9 +687,7 @@ async function renderHome() {
   });
 
   if (sortMode === "recent") {
-    items.sort(
-      (a, b) => (b.lastOpenedAt - a.lastOpenedAt) || (a.p.date < b.p.date ? 1 : -1)
-    );
+    items.sort((a, b) => (b.lastOpenedAt - a.lastOpenedAt) || (a.p.date < b.p.date ? 1 : -1));
   } else if (sortMode === "oldest") {
     items.sort((a, b) => (a.p.date < b.p.date ? -1 : 1));
   } else {
@@ -680,12 +773,10 @@ async function openPuzzle(psid, date) {
 
   let puzzleRec = await idb.get("puzzles", key);
   if (!puzzleRec) {
-    // index might not be in IDB yet; create metadata on the fly
     puzzleRec = { key, psid, date, fetchedAt: 0, data: null };
     await idb.put("puzzles", puzzleRec);
   }
 
-  // Fetch puzzle JSON on-demand
   if (!puzzleRec.data) {
     const url = `./puzzles/${psid}/${date}.json`;
     const data = await fetchJson(url, { cache: "no-store" });
@@ -930,9 +1021,7 @@ function freshProgress(spec) {
 }
 
 function snapshot(spec, progress) {
-  let total = 0,
-    filled = 0,
-    correctFilled = 0;
+  let total = 0, filled = 0, correctFilled = 0;
   for (let i = 0; i < spec.solution.length; i++) {
     if (spec.isBlock[i]) continue;
     total++;
@@ -1027,10 +1116,7 @@ function onCellTap(cellIndex) {
     nextDir = next.dir;
   } else if (current.selected) {
     const keep = choices.find((c) => c.dir === current.selected.dir);
-    if (keep) {
-      nextWordId = keep.wordId;
-      nextDir = keep.dir;
-    }
+    if (keep) { nextWordId = keep.wordId; nextDir = keep.dir; }
   }
 
   if (!nextWordId) {
@@ -1059,6 +1145,7 @@ function setSelection(sel) {
 
 function paintSelection() {
   for (const el of gridEl.children) el.classList.remove("selected", "word");
+
   if (!current.selected) return;
 
   const { cellIndex, wordId } = current.selected;
@@ -1078,15 +1165,9 @@ function paintSelection() {
 }
 
 function showCurrentClue() {
-  if (!current.selected?.wordId) {
-    showClue(null);
-    return;
-  }
+  if (!current.selected?.wordId) { showClue(null); return; }
   const w = current.spec.wordMap.get(current.selected.wordId);
-  if (!w) {
-    showClue(null);
-    return;
-  }
+  if (!w) { showClue(null); return; }
 
   const hasLen = /\(\s*\d+\s*\)\s*$/.test((w.clue || "").trim());
   const text = hasLen ? `${w.clue}` : `${w.clue} (${w.len})`;
@@ -1199,29 +1280,15 @@ function onGlobalKeyDown(e) {
   let r = Math.floor(current.selected.cellIndex / cols);
   let c = current.selected.cellIndex % cols;
 
-  let dr = 0,
-    dc = 0;
+  let dr = 0, dc = 0;
   let wantDir = current.selected.dir;
 
-  if (e.key === "ArrowLeft") {
-    dc = -1;
-    wantDir = "a";
-  }
-  if (e.key === "ArrowRight") {
-    dc = 1;
-    wantDir = "a";
-  }
-  if (e.key === "ArrowUp") {
-    dr = -1;
-    wantDir = "d";
-  }
-  if (e.key === "ArrowDown") {
-    dr = 1;
-    wantDir = "d";
-  }
+  if (e.key === "ArrowLeft") { dc = -1; wantDir = "a"; }
+  if (e.key === "ArrowRight") { dc = 1; wantDir = "a"; }
+  if (e.key === "ArrowUp") { dr = -1; wantDir = "d"; }
+  if (e.key === "ArrowDown") { dr = 1; wantDir = "d"; }
 
-  let nr = r + dr,
-    nc = c + dc;
+  let nr = r + dr, nc = c + dc;
   while (nr >= 0 && nr < rows && nc >= 0 && nc < cols) {
     const ni = nr * cols + nc;
     if (!isBlock[ni]) {
@@ -1230,8 +1297,7 @@ function onGlobalKeyDown(e) {
       setSelection({ cellIndex: ni, wordId: keep.wordId, dir: keep.dir });
       return;
     }
-    nr += dr;
-    nc += dc;
+    nr += dr; nc += dc;
   }
 }
 
@@ -1402,9 +1468,7 @@ async function completePuzzle() {
    WORD ORDER
 =========================== */
 
-function firstWord() {
-  return current.spec?.words?.[0] || null;
-}
+function firstWord() { return current.spec?.words?.[0] || null; }
 function nextWordAfter(wordId) {
   const idx = current.spec.words.findIndex((w) => w.id === wordId);
   if (idx < 0) return null;
