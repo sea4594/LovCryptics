@@ -4,7 +4,6 @@
   --bg:#f1f4ff;
   --panel:#ffffff;
 
-  /* stronger borders for desktop light theme */
   --line:rgba(20,20,40,.28);
   --grid-line:rgba(20,20,40,.26);
 
@@ -16,8 +15,10 @@
   --block-bg:rgba(0,0,0,.24);
 
   --sel:rgba(0,110,255,.95);
+
+  /* outline + ok fill are theme-derived via @supports below */
   --word:rgba(0,110,255,.18);
-  --word-ok:rgba(0,170,95,.26);
+  --word-ok:rgba(0,110,255,.26);
 
   --sheet-dim:rgba(0,0,0,.24);
   --sheet-bg:rgba(255,255,255,.99);
@@ -42,8 +43,9 @@ body[data-theme="dark"]{
   --block-bg:rgba(255,255,255,.30);
 
   --sel:rgba(140,190,255,.98);
+
   --word:rgba(140,190,255,.26);
-  --word-ok:rgba(80,220,150,.30);
+  --word-ok:rgba(140,190,255,.30);
 
   --sheet-dim:rgba(0,0,0,.46);
   --sheet-bg:rgba(18,18,22,.99);
@@ -56,7 +58,9 @@ body[data-theme="sage"]{
   --text:rgba(10,20,15,.96); --muted:rgba(10,20,15,.62);
   --cell-bg:rgba(255,255,255,.94); --cell-text:rgba(10,20,15,.95);
   --block-bg:rgba(10,20,15,.26);
-  --sel:rgba(16,140,88,.96); --word:rgba(16,140,88,.22); --word-ok:rgba(0,170,95,.28);
+  --sel:rgba(16,140,88,.96);
+  --word:rgba(16,140,88,.22);
+  --word-ok:rgba(16,140,88,.28);
   --sheet-dim:rgba(0,0,0,.22); --sheet-bg:rgba(255,255,255,.99);
 }
 
@@ -67,7 +71,9 @@ body[data-theme="lavender"]{
   --text:rgba(26,16,48,.96); --muted:rgba(26,16,48,.62);
   --cell-bg:rgba(255,255,255,.94); --cell-text:rgba(26,16,48,.95);
   --block-bg:rgba(26,16,48,.24);
-  --sel:rgba(108,72,235,.96); --word:rgba(108,72,235,.22); --word-ok:rgba(0,170,95,.26);
+  --sel:rgba(108,72,235,.96);
+  --word:rgba(108,72,235,.22);
+  --word-ok:rgba(108,72,235,.26);
   --sheet-dim:rgba(0,0,0,.22); --sheet-bg:rgba(255,255,255,.99);
 }
 
@@ -78,7 +84,9 @@ body[data-theme="ocean"]{
   --text:rgba(10,25,45,.96); --muted:rgba(10,25,45,.62);
   --cell-bg:rgba(255,255,255,.94); --cell-text:rgba(10,25,45,.95);
   --block-bg:rgba(10,25,45,.24);
-  --sel:rgba(0,120,195,.96); --word:rgba(0,120,195,.22); --word-ok:rgba(0,170,95,.26);
+  --sel:rgba(0,120,195,.96);
+  --word:rgba(0,120,195,.22);
+  --word-ok:rgba(0,120,195,.26);
   --sheet-dim:rgba(0,0,0,.22); --sheet-bg:rgba(255,255,255,.99);
 }
 
@@ -89,8 +97,18 @@ body[data-theme="sand"]{
   --text:rgba(38,25,10,.96); --muted:rgba(38,25,10,.62);
   --cell-bg:rgba(255,255,255,.94); --cell-text:rgba(38,25,10,.95);
   --block-bg:rgba(38,25,10,.28);
-  --sel:rgba(210,120,35,.96); --word:rgba(210,120,35,.22); --word-ok:rgba(0,170,95,.26);
+  --sel:rgba(210,120,35,.96);
+  --word:rgba(210,120,35,.22);
+  --word-ok:rgba(210,120,35,.26);
   --sheet-dim:rgba(0,0,0,.22); --sheet-bg:rgba(255,255,255,.99);
+}
+
+/* Prefer theme-derived mix when supported */
+@supports (background: color-mix(in srgb, #000 50%, transparent)) {
+  :root, body[data-theme]{
+    --word: color-mix(in srgb, var(--sel) 18%, transparent);
+    --word-ok: color-mix(in srgb, var(--sel) 30%, transparent);
+  }
 }
 
 *{box-sizing:border-box;}
@@ -117,9 +135,38 @@ body{
 
 h1{margin:0;font-size:20px;letter-spacing:.2px;}
 
-.homeTop{display:flex;align-items:center;justify-content:space-between;gap:12px;margin-bottom:10px;}
-.homeTitle{display:grid;gap:4px;}
-.homeActions{display:flex;gap:10px;align-items:center;flex-wrap:wrap;}
+/* ===== HOME HEADER LAYOUT ===== */
+
+.homeTop{
+  display:flex;
+  align-items:center;
+  justify-content:space-between;
+  gap:12px;
+  margin-bottom:10px;
+  flex-wrap:nowrap; /* never wrap */
+}
+
+.homeLeft{
+  display:flex;
+  align-items:center;
+  gap:10px;
+  min-width:0; /* allow title to shrink */
+  flex:1 1 auto;
+}
+
+.homeTitle{
+  display:grid;
+  gap:4px;
+  min-width:0;
+}
+
+.homeActions{
+  display:flex;
+  gap:10px;
+  align-items:center;
+  flex-wrap:nowrap; /* never wrap */
+  flex:0 0 auto;
+}
 
 .chip{
   border:1px solid var(--line);
@@ -127,8 +174,21 @@ h1{margin:0;font-size:20px;letter-spacing:.2px;}
   color:var(--text);
   padding:10px 12px;
   border-radius:999px;
+  white-space:nowrap; /* keep labels single-line */
 }
-.iconChip{ width:44px; text-align:center; padding:10px 0; }
+
+.iconChip{
+  width:44px;
+  text-align:center;
+  padding:10px 0;
+  flex:0 0 auto;
+}
+
+/* if very narrow screens, slightly tighten */
+@media (max-width: 360px){
+  .homeActions{gap:8px;}
+  .chip{padding:9px 10px;}
+}
 
 .archive{
   height:calc(100% - 56px);
@@ -157,7 +217,8 @@ h1{margin:0;font-size:20px;letter-spacing:.2px;}
 .card small{color:var(--muted);}
 .pct{font-variant-numeric:tabular-nums;}
 
-/* Puzzle */
+/* ===== PUZZLE ===== */
+
 #puzzleView{
   padding:0;
   padding-top:env(safe-area-inset-top);
@@ -229,18 +290,35 @@ h1{margin:0;font-size:20px;letter-spacing:.2px;}
   position:relative;
   z-index:0;
 }
+
 .cell.block{background:var(--block-bg);color:transparent;}
-.cell.wordOk{ background:var(--word-ok); }
-.cell.word{ background:var(--word); }
-.cell.selected{
-  outline:2px solid var(--sel);
-  outline-offset:-2px;
+
+/* Correct words: theme color fill */
+.cell.wordOk{
+  background:var(--word-ok);
 }
-body.modalOpen .cell.selected{ outline:none; }
+
+/* Selected word: outline only (so wordOk fill still shows) */
+.cell.word{
+  box-shadow: inset 0 0 0 2px var(--sel);
+}
+
+/* Selected cell: very visible outline + halo */
+.cell.selected{
+  outline:3px solid var(--sel);
+  outline-offset:-3px;
+  box-shadow:
+    inset 0 0 0 3px var(--sel),
+    0 0 0 2px var(--word);
+}
+
+/* avoid outlines when modals open */
+body.modalOpen .cell.selected{ outline:none; box-shadow:none; }
 
 .kbd{position:absolute;left:-9999px;top:-9999px;width:1px;height:1px;opacity:0;}
 
-/* Sheets: TOP (not bottom) */
+/* ===== SHEETS ===== */
+
 .sheet{
   position:fixed;
   inset:0;
@@ -268,7 +346,7 @@ body.modalOpen .cell.selected{ outline:none; }
   font-weight:1000;
   letter-spacing:1.4px;
   text-transform:uppercase;
-  background:linear-gradient(90deg, rgba(0,110,255,.26), rgba(0,170,95,.22));
+  background:linear-gradient(90deg, var(--word), var(--word-ok));
 }
 .sheetBody{padding:0 14px 12px;color:var(--muted);}
 .sheetDivider{height:1px;background:var(--line);}
