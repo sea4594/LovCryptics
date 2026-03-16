@@ -337,18 +337,17 @@ body[data-theme-base="sand"][data-theme-mode="dark"]{
 }
 
 .clueBar{
-  height:var(--cluebar-h);
+  min-height:var(--cluebar-h);
   padding:5px 10px;
   border-bottom:1px solid var(--line);
   color:var(--text);
   font-size:13px;
   display:flex;
-  align-items:center;
+  align-items:flex-start;
   background:var(--panel);
   user-select:none;
-  white-space:nowrap;
-  overflow:hidden;
-  text-overflow:ellipsis;
+  white-space:normal;
+  overflow-wrap:anywhere;
 }
 
 .gridShell{
@@ -419,7 +418,7 @@ body.modalOpen .cellOutline{
 .mobileKeyboard{
   display:none;
   gap:0;
-  margin-top:-14px;
+  margin-top:-20px;
   padding:4px 8px 12px;
   border-top:1px solid var(--line);
   background:#e8ebf2;
