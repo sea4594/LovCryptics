@@ -434,7 +434,7 @@ body.modalOpen .cellOutline{
   content:"";
   display:block;
   grid-column:1 / -1;
-  height:60px;
+  height:30px;
 }
 
 @supports (background: color-mix(in srgb, #000 50%, transparent)) {
@@ -492,7 +492,7 @@ body.modalOpen .cellOutline{
 .mobileKey::before{
   content:"";
   position:absolute;
-  inset:6px 2px;
+  inset:5px 2px;
   background:#ffffff;
   border-radius:10px;
   z-index:-1;
@@ -523,7 +523,7 @@ body.modalOpen .cellOutline{
 }
 
 .mobileKeyBackspace::before{
-  inset:6px -4px 6px 2px;
+  inset:5px -4px 5px 2px;
 }
 
 @media (pointer: coarse), (hover: none) {

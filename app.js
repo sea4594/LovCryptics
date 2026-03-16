@@ -1392,27 +1392,42 @@ function showClue(text) {
   if (current.spec) computeCellSize(current.spec.rows, current.spec.cols);
 }
 
+function getClueBottomBoundary() {
+  return clueBar.getBoundingClientRect().bottom;
+}
+
+function getKeyboardTopBoundary() {
+  if (!mobileKeyboardEl || mobileKeyboardEl.classList.contains("hidden")) {
+    return window.innerHeight;
+  }
+
+  const kbStyle = window.getComputedStyle(mobileKeyboardEl);
+  if (kbStyle.display === "none" || kbStyle.visibility === "hidden") {
+    return window.innerHeight;
+  }
+
+  const topRow = mobileKeyboardEl.querySelector(".mobileKeyboardRowTop");
+  if (topRow) {
+    const rowRect = topRow.getBoundingClientRect();
+    return rowRect.top;
+  }
+
+  return mobileKeyboardEl.getBoundingClientRect().top;
+}
+
 function positionGridAtPlayableCenter() {
   if (!puzzleOpen || !gridEl || !clueBar) return;
 
   // Reset before measuring so offsets don't compound.
   gridEl.style.transform = "translateY(0px)";
 
-  const clueRect = clueBar.getBoundingClientRect();
-  let keyboardTop = window.innerHeight;
-
-  if (mobileKeyboardEl && !mobileKeyboardEl.classList.contains("hidden")) {
-    const kbStyle = window.getComputedStyle(mobileKeyboardEl);
-    if (kbStyle.display !== "none" && kbStyle.visibility !== "hidden") {
-      const kbRect = mobileKeyboardEl.getBoundingClientRect();
-      keyboardTop = kbRect.top;
-    }
-  }
+  const clueBottom = getClueBottomBoundary();
+  const keyboardTop = getKeyboardTopBoundary();
 
   const gridRect = gridEl.getBoundingClientRect();
   if (!gridRect.height) return;
 
-  const targetCenterY = (clueRect.bottom + keyboardTop) / 2;
+  const targetCenterY = (clueBottom + keyboardTop) / 2;
   const gridCenterY = gridRect.top + (gridRect.height / 2);
   const dy = Math.round(targetCenterY - gridCenterY);
 
