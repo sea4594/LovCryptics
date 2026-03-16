@@ -282,6 +282,7 @@ async function init() {
   // Keyboard
   kbd.addEventListener("keydown", onKeyDown);
   window.addEventListener("keydown", onGlobalKeyDown);
+  installNoZoomGuards();
   renderMobileKeyboard();
 
   // Lifecycle
@@ -331,56 +332,75 @@ function renderMobileKeyboard() {
   }
 
   const rows = [
-    "QWERTYUIOP",
-    "ASDFGHJKL",
-    "ZXCVBNM",
+    {
+      className: "mobileKeyboardRow mobileKeyboardRowTop",
+      keys: [..."QWERTYUIOP"].map((key) => ({ label: key, key })),
+    },
+    {
+      className: "mobileKeyboardRow mobileKeyboardRowHome",
+      keys: [..."ASDFGHJKL"].map((key) => ({ label: key, key })),
+    },
+    {
+      className: "mobileKeyboardRow mobileKeyboardRowBottom",
+      keys: [
+        { label: "ENTER", key: "Enter", extraClass: "mobileKeyWide" },
+        ...[..."ZXCVBNM"].map((key) => ({ label: key, key })),
+        { label: "BACKSPACE", key: "Backspace", extraClass: "mobileKeyWide" },
+      ],
+    },
+    {
+      className: "mobileKeyboardRow mobileKeyboardRowSpace",
+      keys: [{ label: "SPACE", key: "Space", extraClass: "mobileKeySpace" }],
+    },
   ];
 
   mobileKeyboardEl.innerHTML = "";
   mobileKeyboardEl.classList.remove("hidden");
 
-  for (const rowLetters of rows) {
+  for (const rowSpec of rows) {
     const row = document.createElement("div");
-    row.className = "mobileKeyboardRow";
+    row.className = rowSpec.className;
 
-    for (const letter of rowLetters) {
+    for (const item of rowSpec.keys) {
       const btn = document.createElement("button");
       btn.type = "button";
-      btn.className = "mobileKey";
-      btn.textContent = letter;
-      btn.setAttribute("aria-label", letter);
+      btn.className = `mobileKey ${item.extraClass || ""}`.trim();
+      btn.textContent = item.label;
+      btn.setAttribute("aria-label", item.label);
       btn.addEventListener("click", () => {
-        handlePuzzleKey(letter);
+        handlePuzzleKey(item.key);
       });
       row.appendChild(btn);
     }
 
     mobileKeyboardEl.appendChild(row);
   }
+}
 
-  const actionRow = document.createElement("div");
-  actionRow.className = "mobileKeyboardRow mobileKeyboardRowActions";
+function installNoZoomGuards() {
+  let lastTouchEnd = 0;
 
-  const backspaceBtn = document.createElement("button");
-  backspaceBtn.type = "button";
-  backspaceBtn.className = "mobileKey mobileKeyWide";
-  backspaceBtn.textContent = "BACKSPACE";
-  backspaceBtn.setAttribute("aria-label", "Backspace");
-  backspaceBtn.addEventListener("click", () => {
-    handlePuzzleKey("Backspace");
+  document.addEventListener("touchend", (e) => {
+    const now = Date.now();
+    if (now - lastTouchEnd < 350) e.preventDefault();
+    lastTouchEnd = now;
+  }, { passive: false });
+
+  for (const eventName of ["gesturestart", "gesturechange", "gestureend"]) {
+    document.addEventListener(eventName, (e) => {
+      e.preventDefault();
+    }, { passive: false });
+  }
+
+  window.addEventListener("wheel", (e) => {
+    if (e.ctrlKey) e.preventDefault();
+  }, { passive: false });
+
+  window.addEventListener("keydown", (e) => {
+    if ((e.ctrlKey || e.metaKey) && ["+", "=", "-", "0"].includes(e.key)) {
+      e.preventDefault();
+    }
   });
-
-  const enterBtn = document.createElement("button");
-  enterBtn.type = "button";
-  enterBtn.className = "mobileKey mobileKeyWide";
-  enterBtn.textContent = "ENTER";
-  enterBtn.setAttribute("aria-label", "Enter");
-  enterBtn.addEventListener("click", () => {
-    handlePuzzleKey("Enter");
-  });
-
-  actionRow.append(backspaceBtn, enterBtn);
-  mobileKeyboardEl.appendChild(actionRow);
 }
 
 /* ===========================
@@ -1420,6 +1440,10 @@ async function handlePuzzleKey(key) {
     return toggleSelectedDirection();
   }
 
+  if (key === " " || key === "Space" || key === "Spacebar") {
+    return selectNextWord();
+  }
+
   if (!current.selected) return false;
 
   const { cellIndex, wordId } = current.selected;
@@ -1466,6 +1490,18 @@ function toggleSelectedDirection() {
   const curId = current.selected.wordId;
   const next = choices.find((c) => c.wordId !== curId) || choices[0];
   setSelection({ cellIndex: idx, wordId: next.wordId, dir: next.dir });
+  return true;
+}
+
+function selectNextWord() {
+  if (!current.spec?.words?.length) return false;
+
+  const next = current.selected?.wordId
+    ? (nextWordAfter(current.selected.wordId) || firstWord())
+    : firstWord();
+
+  if (!next) return false;
+  setSelection({ cellIndex: next.cells[0], wordId: next.id, dir: next.dir });
   return true;
 }
 

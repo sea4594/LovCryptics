@@ -422,22 +422,25 @@ body.modalOpen .cellOutline{
 
 .mobileKeyboardRow{
   display:grid;
-  grid-template-columns:repeat(10, minmax(0, 1fr));
   gap:6px;
 }
 
-.mobileKeyboardRow:nth-child(2){
+.mobileKeyboardRowTop{
+  grid-template-columns:repeat(10, minmax(0, 1fr));
+}
+
+.mobileKeyboardRowHome{
   grid-template-columns:repeat(9, minmax(0, 1fr));
   padding:0 5%;
 }
 
-.mobileKeyboardRow:nth-child(3){
-  grid-template-columns:repeat(7, minmax(0, 1fr));
-  padding:0 13%;
+.mobileKeyboardRowBottom{
+  grid-template-columns:1.6fr repeat(7, minmax(0, 1fr)) 1.6fr;
 }
 
-.mobileKeyboardRowActions{
-  grid-template-columns:repeat(2, minmax(0, 1fr));
+.mobileKeyboardRowSpace{
+  grid-template-columns:minmax(0, 1fr);
+  padding:0 18%;
 }
 
 .mobileKey{
@@ -455,6 +458,11 @@ body.modalOpen .cellOutline{
 .mobileKeyWide{
   font-size:13px;
   letter-spacing:.5px;
+}
+
+.mobileKeySpace{
+  font-size:14px;
+  letter-spacing:.7px;
 }
 
 @media (pointer: coarse), (hover: none) {
