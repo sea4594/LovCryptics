@@ -47,6 +47,7 @@ const filterBtn = $("#filterBtn");
 const homeMenuBtn = $("#homeMenuBtn");
 
 const gridEl = $("#grid");
+const gridShellEl = document.querySelector(".gridShell");
 const clueBar = $("#clueBar");
 const timerEl = $("#timer");
 const kbd = $("#kbd");
@@ -1386,25 +1387,15 @@ function showCurrentClue() {
 }
 
 function showClue(text) {
-  if (!text) {
-    clueBar.classList.add("hidden");
-    clueBar.textContent = "";
-  } else {
-    clueBar.classList.remove("hidden");
-    clueBar.textContent = text;
-  }
+  clueBar.textContent = text || "";
   if (current.spec) computeCellSize(current.spec.rows, current.spec.cols);
 }
 
 function computeCellSize(rows, cols) {
-  const topbarH = 42;
-  const clueH = clueBar.classList.contains("hidden") ? 0 : 30;
-
-  const vpW = Math.floor(window.innerWidth);
-  const vpH = Math.floor(window.innerHeight);
-
-  const availW = vpW - 10;
-  const availH = vpH - topbarH - clueH - 10;
+  if (!gridShellEl) return;
+  const rect = gridShellEl.getBoundingClientRect();
+  const availW = Math.max(0, Math.floor(rect.width) - 8);
+  const availH = Math.max(0, Math.floor(rect.height) - 8);
 
   const cell = Math.max(20, Math.floor(Math.min(availW / cols, availH / rows)));
   gridEl.style.setProperty("--cell", `${cell}px`);
