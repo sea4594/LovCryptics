@@ -1391,6 +1391,34 @@ function showClue(text) {
   if (current.spec) computeCellSize(current.spec.rows, current.spec.cols);
 }
 
+function positionGridAtPlayableCenter() {
+  if (!puzzleOpen || !gridEl || !clueBar) return;
+
+  // Reset before measuring so offsets don't compound.
+  gridEl.style.transform = "translateY(0px)";
+
+  const clueRect = clueBar.getBoundingClientRect();
+  let keyboardTop = window.innerHeight;
+
+  if (mobileKeyboardEl && !mobileKeyboardEl.classList.contains("hidden")) {
+    const kbStyle = window.getComputedStyle(mobileKeyboardEl);
+    if (kbStyle.display !== "none" && kbStyle.visibility !== "hidden") {
+      const kbRect = mobileKeyboardEl.getBoundingClientRect();
+      keyboardTop = kbRect.top;
+    }
+  }
+
+  const gridRect = gridEl.getBoundingClientRect();
+  if (!gridRect.height) return;
+
+  const targetCenterY = (clueRect.bottom + keyboardTop) / 2;
+  const gridCenterY = gridRect.top + (gridRect.height / 2);
+  const dy = Math.round(targetCenterY - gridCenterY);
+
+  gridEl.style.transform = `translateY(${dy}px)`;
+  paintSelection();
+}
+
 function computeCellSize(rows, cols) {
   if (!gridShellEl) return;
   const rect = gridShellEl.getBoundingClientRect();
@@ -1399,7 +1427,7 @@ function computeCellSize(rows, cols) {
 
   const cell = Math.max(20, Math.floor(Math.min(availW / cols, availH / rows)));
   gridEl.style.setProperty("--cell", `${cell}px`);
-  paintSelection();
+  requestAnimationFrame(positionGridAtPlayableCenter);
 }
 
 /* ===========================
