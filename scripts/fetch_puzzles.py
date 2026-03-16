@@ -37,21 +37,36 @@ today = datetime.date.today()
 ahead_days = 3
 end = today + datetime.timedelta(days=ahead_days)
 
-if dates:
-    newest = datetime.date.fromisoformat(dates[-1])
-else:
-    newest = today
+# Build a complete view of known dates from both index and existing files.
+file_dates = []
+for p in OUT_DIR.glob("*.json"):
+    try:
+        datetime.date.fromisoformat(p.stem)
+        file_dates.append(p.stem)
+    except ValueError:
+        continue
 
-# Forward fill from newest+1 to end
-cursor = newest
+known_dates = sorted(set(dates + file_dates))
+
+if known_dates:
+    oldest = datetime.date.fromisoformat(known_dates[0])
+else:
+    oldest = today
+
+# Gap fill from oldest through end so any previously missed day is retried.
+cursor = oldest
 while cursor <= end:
     ds = iso(cursor)
     out_file = OUT_DIR / f"{ds}.json"
+    # Always attempt missing files, even if index/date history has gaps.
     if not out_file.exists():
         data = fetch_date(ds)
         if data:
             out_file.write_text(json.dumps(data, ensure_ascii=False), "utf-8")
             dates.append(ds)
+    else:
+        # Keep index in sync with files that already exist on disk.
+        dates.append(ds)
     cursor += datetime.timedelta(days=1)
 
 # Optional backfill
