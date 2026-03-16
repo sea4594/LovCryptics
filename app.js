@@ -1439,11 +1439,11 @@ async function handlePuzzleKey(key) {
   if (!current.spec || !current.progress) return false;
   if (current.progress.completed) return false;
 
-  if (key === "Enter") {
+  if (key === " " || key === "Space" || key === "Spacebar") {
     return toggleSelectedDirection();
   }
 
-  if (key === " " || key === "Space" || key === "Spacebar") {
+  if (key === "Enter") {
     return selectNextWord();
   }
 
