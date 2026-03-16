@@ -397,10 +397,10 @@ function renderMobileKeyboard() {
       btn.tabIndex = -1;
       btn.addEventListener("pointerdown", (e) => {
         e.preventDefault();
-        btn.setPointerCapture?.(e.pointerId);
         btn.blur();
 
         if (item.key === "Backspace") {
+          btn.setPointerCapture?.(e.pointerId);
           handlePuzzleKey(item.key);
           stopBackspaceRepeat();
           backspaceRepeatDelayTimer = setTimeout(() => {
@@ -411,6 +411,9 @@ function renderMobileKeyboard() {
           return;
         }
 
+        // Letter/space/enter keys should act as quick taps even if finger is held.
+        btn.classList.add("mobileKeyQuickRelease");
+        setTimeout(() => btn.classList.remove("mobileKeyQuickRelease"), 70);
         handlePuzzleKey(item.key);
       });
 
