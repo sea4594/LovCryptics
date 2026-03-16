@@ -131,6 +131,19 @@ let signedIn = false;
 let wordOutlineEl = null;
 let cellOutlineEl = null;
 const useInAppKeyboard = window.matchMedia("(pointer: coarse), (hover: none)").matches;
+let backspaceRepeatDelayTimer = null;
+let backspaceRepeatInterval = null;
+
+function stopBackspaceRepeat() {
+  if (backspaceRepeatDelayTimer) {
+    clearTimeout(backspaceRepeatDelayTimer);
+    backspaceRepeatDelayTimer = null;
+  }
+  if (backspaceRepeatInterval) {
+    clearInterval(backspaceRepeatInterval);
+    backspaceRepeatInterval = null;
+  }
+}
 
 /* ===========================
    INIT
@@ -382,8 +395,27 @@ function renderMobileKeyboard() {
       btn.tabIndex = -1;
       btn.addEventListener("pointerdown", (e) => {
         e.preventDefault();
+        btn.setPointerCapture?.(e.pointerId);
+        btn.blur();
+
+        if (item.key === "Backspace") {
+          void handlePuzzleKey(item.key);
+          stopBackspaceRepeat();
+          backspaceRepeatDelayTimer = setTimeout(() => {
+            backspaceRepeatInterval = setInterval(() => {
+              void handlePuzzleKey(item.key);
+            }, 95);
+          }, 260);
+          return;
+        }
+
         void handlePuzzleKey(item.key);
       });
+
+      btn.addEventListener("contextmenu", (e) => e.preventDefault());
+      btn.addEventListener("pointerup", stopBackspaceRepeat);
+      btn.addEventListener("pointercancel", stopBackspaceRepeat);
+      btn.addEventListener("pointerleave", stopBackspaceRepeat);
       row.appendChild(btn);
     }
 

@@ -337,7 +337,7 @@ body[data-theme-base="sand"][data-theme-mode="dark"]{
 }
 
 .clueBar{
-  min-height:var(--cluebar-h);
+  height:var(--cluebar-h);
   padding:5px 10px;
   border-bottom:1px solid var(--line);
   color:var(--text);
@@ -346,15 +346,18 @@ body[data-theme-base="sand"][data-theme-mode="dark"]{
   align-items:center;
   background:var(--panel);
   user-select:none;
+  white-space:nowrap;
+  overflow:hidden;
+  text-overflow:ellipsis;
 }
 
 .gridShell{
   flex:1 1 auto;
   min-height:0;
   display:flex;
-  align-items:flex-start;
+  align-items:center;
   justify-content:center;
-  padding:4px;
+  padding:6px 4px;
   overflow:hidden;
 }
 
@@ -416,11 +419,14 @@ body.modalOpen .cellOutline{
 .mobileKeyboard{
   display:none;
   gap:8px;
-  margin-top:-6px;
+  margin-top:-14px;
   padding:4px 8px 12px;
   border-top:1px solid var(--line);
   background:#e8ebf2;
   touch-action:manipulation;
+  user-select:none;
+  -webkit-user-select:none;
+  -webkit-touch-callout:none;
 }
 
 @supports (background: color-mix(in srgb, #000 50%, transparent)) {
@@ -467,6 +473,9 @@ body.modalOpen .cellOutline{
   touch-action:manipulation;
   appearance:none;
   -webkit-appearance:none;
+  user-select:none;
+  -webkit-user-select:none;
+  -webkit-touch-callout:none;
 }
 
 .mobileKeyWide{
