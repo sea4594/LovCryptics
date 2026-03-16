@@ -379,8 +379,10 @@ function renderMobileKeyboard() {
       btn.className = `mobileKey ${item.extraClass || ""}`.trim();
       btn.textContent = item.label;
       btn.setAttribute("aria-label", item.label);
-      btn.addEventListener("click", () => {
-        handlePuzzleKey(item.key);
+      btn.tabIndex = -1;
+      btn.addEventListener("pointerdown", (e) => {
+        e.preventDefault();
+        void handlePuzzleKey(item.key);
       });
       row.appendChild(btn);
     }
