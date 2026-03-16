@@ -13,6 +13,7 @@ html,body{ height:100%; }
 body{
   background:var(--bg);
   color:var(--text);
+  touch-action:manipulation;
 }
 
 .hidden{display:none!important;}
@@ -417,7 +418,14 @@ body.modalOpen .cellOutline{
   gap:8px;
   padding:8px 8px 12px;
   border-top:1px solid var(--line);
-  background:var(--panel);
+  background:#e8ebf2;
+  touch-action:manipulation;
+}
+
+@supports (background: color-mix(in srgb, #000 50%, transparent)) {
+  .mobileKeyboard{
+    background:color-mix(in srgb, var(--bg) 80%, white);
+  }
 }
 
 .mobileKeyboardRow{
@@ -435,24 +443,25 @@ body.modalOpen .cellOutline{
 }
 
 .mobileKeyboardRowBottom{
-  grid-template-columns:1.6fr repeat(7, minmax(0, 1fr)) 1.6fr;
+  grid-template-columns:repeat(7, minmax(0, 1fr)) 1.6fr;
 }
 
 .mobileKeyboardRowSpace{
-  grid-template-columns:minmax(0, 1fr);
-  padding:0 18%;
+  grid-template-columns:1fr 4.5fr 1.7fr;
+  gap:8px;
 }
 
 .mobileKey{
   border:1px solid var(--line);
-  background:var(--bg);
-  color:var(--text);
+  background:#ffffff;
+  color:#111318;
   border-radius:12px;
   min-height:44px;
   padding:10px 0;
   font-size:16px;
   font-weight:900;
   text-transform:uppercase;
+  touch-action:manipulation;
 }
 
 .mobileKeyWide{
@@ -463,6 +472,15 @@ body.modalOpen .cellOutline{
 .mobileKeySpace{
   font-size:14px;
   letter-spacing:.7px;
+}
+
+.mobileKeyIcon{
+  font-size:20px;
+  line-height:1;
+}
+
+.mobileKeySpacer{
+  min-height:44px;
 }
 
 @media (pointer: coarse), (hover: none) {

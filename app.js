@@ -343,14 +343,17 @@ function renderMobileKeyboard() {
     {
       className: "mobileKeyboardRow mobileKeyboardRowBottom",
       keys: [
-        { label: "ENTER", key: "Enter", extraClass: "mobileKeyWide" },
         ...[..."ZXCVBNM"].map((key) => ({ label: key, key })),
-        { label: "BACKSPACE", key: "Backspace", extraClass: "mobileKeyWide" },
+        { label: "⌫", key: "Backspace", extraClass: "mobileKeyWide mobileKeyIcon" },
       ],
     },
     {
       className: "mobileKeyboardRow mobileKeyboardRowSpace",
-      keys: [{ label: "SPACE", key: "Space", extraClass: "mobileKeySpace" }],
+      keys: [
+        { label: "", key: null, extraClass: "mobileKeySpacer" },
+        { label: "SPACE", key: "Space", extraClass: "mobileKeySpace" },
+        { label: "ENTER", key: "Enter", extraClass: "mobileKeyWide" },
+      ],
     },
   ];
 
@@ -362,6 +365,14 @@ function renderMobileKeyboard() {
     row.className = rowSpec.className;
 
     for (const item of rowSpec.keys) {
+      if (!item.key) {
+        const spacer = document.createElement("div");
+        spacer.className = item.extraClass || "";
+        spacer.setAttribute("aria-hidden", "true");
+        row.appendChild(spacer);
+        continue;
+      }
+
       const btn = document.createElement("button");
       btn.type = "button";
       btn.className = `mobileKey ${item.extraClass || ""}`.trim();
@@ -378,14 +389,6 @@ function renderMobileKeyboard() {
 }
 
 function installNoZoomGuards() {
-  let lastTouchEnd = 0;
-
-  document.addEventListener("touchend", (e) => {
-    const now = Date.now();
-    if (now - lastTouchEnd < 350) e.preventDefault();
-    lastTouchEnd = now;
-  }, { passive: false });
-
   for (const eventName of ["gesturestart", "gesturechange", "gestureend"]) {
     document.addEventListener(eventName, (e) => {
       e.preventDefault();
