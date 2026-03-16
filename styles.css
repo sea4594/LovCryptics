@@ -1,6 +1,7 @@
 :root{
   --topbar-h: 42px;
-  --cluebar-h: 64px;
+  --cluebar-h: 54px;
+  --clue-gap: 8px;
   --card-h: 72px;
   --cell-gap: 1px;
   --grid-pad: 1px;
@@ -338,27 +339,28 @@ body[data-theme-base="sand"][data-theme-mode="dark"]{
 
 .clueBar{
   height:var(--cluebar-h);
-  margin-top:8px;
-  padding:5px 10px;
+  margin-top:var(--clue-gap);
+  padding:4px 10px;
   border-bottom:1px solid var(--line);
   color:var(--text);
   font-size:14px;
-  line-height:1.23;
+  line-height:1.2;
   display:block;
   background:var(--panel);
   user-select:none;
   white-space:normal;
   overflow-wrap:anywhere;
   overflow:hidden;
+  cursor:pointer;
 }
 
 .gridShell{
   flex:1 1 auto;
   min-height:0;
   display:flex;
-  align-items:center;
+  align-items:flex-start;
   justify-content:center;
-  padding:0 4px 24px;
+  padding:var(--clue-gap) 4px 24px;
   overflow:hidden;
 }
 
@@ -560,6 +562,32 @@ body.modalOpen .cellOutline{
 }
 
 .sheetTitle{padding:14px 14px 10px;font-weight:950;letter-spacing:.2px;}
+.cluePopupCard{ max-width:560px; }
+.cluePopupHeader{
+  display:flex;
+  align-items:flex-start;
+  justify-content:space-between;
+}
+.cluePopupTitle{ padding-bottom:8px; }
+.cluePopupClose{
+  margin:8px 8px 0 0;
+  width:28px;
+  height:28px;
+  border:1px solid var(--line);
+  border-radius:999px;
+  background:transparent;
+  color:var(--text);
+  font-size:16px;
+  line-height:1;
+  cursor:pointer;
+}
+.cluePopupBody{
+  padding-top:0;
+  font-size:16px;
+  line-height:1.35;
+  color:var(--text);
+  overflow-wrap:anywhere;
+}
 .brandTitle{
   font-weight:1000;
   letter-spacing:1.4px;

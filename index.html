@@ -67,6 +67,17 @@
     <input id="kbd" class="kbd" autocomplete="off" autocapitalize="characters" spellcheck="false" />
   </main>
 
+  <!-- CLUE POPUP -->
+  <div id="cluePopup" class="sheet hidden" role="dialog" aria-modal="true" aria-labelledby="cluePopupTitle">
+    <div class="sheetCard cluePopupCard">
+      <div class="cluePopupHeader">
+        <div id="cluePopupTitle" class="sheetTitle cluePopupTitle">Clue</div>
+        <button id="cluePopupCloseBtn" class="cluePopupClose" aria-label="Close clue popup">×</button>
+      </div>
+      <div id="cluePopupBody" class="sheetBody cluePopupBody"></div>
+    </div>
+  </div>
+
   <!-- HOME MENU -->
   <div id="homeMenu" class="sheet hidden" role="dialog" aria-modal="true">
     <div class="sheetCard">

@@ -49,6 +49,9 @@ const homeMenuBtn = $("#homeMenuBtn");
 const gridEl = $("#grid");
 const gridShellEl = document.querySelector(".gridShell");
 const clueBar = $("#clueBar");
+const cluePopup = $("#cluePopup");
+const cluePopupBody = $("#cluePopupBody");
+const cluePopupCloseBtn = $("#cluePopupCloseBtn");
 const timerEl = $("#timer");
 const kbd = $("#kbd");
 const mobileKeyboardEl = $("#mobileKeyboard");
@@ -125,6 +128,7 @@ let accessToken = null;
 let tokenClient = null;
 let driveFileId = null;
 let signedIn = false;
+let loginInFlight = null;
 
 /* ===========================
    WORD OUTLINE OVERLAYS
@@ -132,6 +136,7 @@ let signedIn = false;
 
 let wordOutlineEl = null;
 let cellOutlineEl = null;
+let currentClueText = "";
 const useInAppKeyboard = window.matchMedia("(pointer: coarse), (hover: none)").matches;
 let backspaceRepeatDelayTimer = null;
 let backspaceRepeatInterval = null;
@@ -180,8 +185,14 @@ async function init() {
     openSheet("themeMenu");
   });
 
-  loginBtn.addEventListener("click", async () => loginGoogle(true));
-  logoutBtn.addEventListener("click", () => logoutGoogle());
+  loginBtn.addEventListener("click", async () => {
+    closeSheet("homeMenu");
+    await loginGoogle(true);
+  });
+  logoutBtn.addEventListener("click", () => {
+    closeSheet("homeMenu");
+    logoutGoogle();
+  });
 
   // Theme mode toggle
   themeModeToggle.addEventListener("change", () => {
@@ -192,6 +203,13 @@ async function init() {
   // Puzzle controls
   hintBtn.addEventListener("click", () => openSheet("hintMenu"));
   menuBtn.addEventListener("click", () => openSheet("mainMenu"));
+  clueBar.addEventListener("click", () => {
+    openCluePopup();
+  });
+
+  cluePopupCloseBtn?.addEventListener("click", () => {
+    closeSheet("cluePopup");
+  });
 
   // Themes inside puzzle menu
   if (puzzleThemeBtn) {
@@ -213,6 +231,7 @@ async function init() {
     if (e.target === hintMenu) closeSheet("hintMenu");
     if (e.target === mainMenu) closeSheet("mainMenu");
     if (e.target === restartConfirm) closeSheet("restartConfirm");
+    if (e.target === cluePopup) closeSheet("cluePopup");
     if (e.target === congrats) return;
 
     const s = e.target?.getAttribute?.("data-sort");
@@ -331,9 +350,7 @@ async function init() {
 
   // Google
   await initGoogleTokenClient();
-  restoreTokenFromStorage();
-  updateAccountUI();
-  if (signedIn) pullProgressFromDrive().catch(() => {});
+  await restoreGoogleSession();
 
   homeStatusEl.textContent = "Loaded";
 }
@@ -576,27 +593,44 @@ function restoreTokenFromStorage() {
 }
 
 async function loginGoogle(interactive) {
+  if (loginInFlight) return loginInFlight;
+
   if (!tokenClient) await initGoogleTokenClient();
   if (!tokenClient) {
-    alert("Google login not ready yet. Please refresh and try again.");
+    if (interactive) alert("Google login not ready yet. Please refresh and try again.");
     return;
   }
 
-  return new Promise((resolve) => {
+  const prompt = interactive ? "select_account" : "";
+
+  loginInFlight = new Promise((resolve) => {
     tokenClient.callback = (resp) => {
       if (resp?.access_token) {
         storeToken(resp.access_token, resp.expires_in);
         driveFileId = null;
         updateAccountUI();
         pullProgressFromDrive().catch(() => {});
+      } else if (!interactive) {
+        signedIn = false;
+        accessToken = null;
+        updateAccountUI();
       }
       resolve();
+      loginInFlight = null;
     };
-    tokenClient.requestAccessToken({ prompt: interactive ? "consent" : "" });
+    tokenClient.requestAccessToken({ prompt });
   });
+
+  return loginInFlight;
 }
 
 function logoutGoogle() {
+  if (window.google?.accounts?.oauth2?.revoke && accessToken) {
+    try {
+      window.google.accounts.oauth2.revoke(accessToken, () => {});
+    } catch {}
+  }
+
   accessToken = null;
   signedIn = false;
   driveFileId = null;
@@ -622,6 +656,25 @@ async function ensureValidTokenOrThrow() {
   if (localStorage.getItem(LS.autoLogin) !== "1") throw new Error("Not signed in");
   await loginGoogle(false);
   if (!signedIn || !accessToken) throw new Error("Not signed in");
+}
+
+async function restoreGoogleSession() {
+  const hasAutoLogin = localStorage.getItem(LS.autoLogin) === "1";
+
+  if (restoreTokenFromStorage()) {
+    updateAccountUI();
+    pullProgressFromDrive().catch(() => {});
+    return;
+  }
+
+  if (!hasAutoLogin) {
+    updateAccountUI();
+    return;
+  }
+
+  accountLine.textContent = "Restoring Google session…";
+  await loginGoogle(false);
+  updateAccountUI();
 }
 
 /* ===========================
@@ -1388,51 +1441,15 @@ function showCurrentClue() {
 }
 
 function showClue(text) {
-  clueBar.textContent = text || "";
+  currentClueText = text || "";
+  clueBar.textContent = currentClueText;
   if (current.spec) computeCellSize(current.spec.rows, current.spec.cols);
 }
 
-function getClueBottomBoundary() {
-  return clueBar.getBoundingClientRect().bottom;
-}
-
-function getKeyboardTopBoundary() {
-  if (!mobileKeyboardEl || mobileKeyboardEl.classList.contains("hidden")) {
-    return window.innerHeight;
-  }
-
-  const kbStyle = window.getComputedStyle(mobileKeyboardEl);
-  if (kbStyle.display === "none" || kbStyle.visibility === "hidden") {
-    return window.innerHeight;
-  }
-
-  const topRow = mobileKeyboardEl.querySelector(".mobileKeyboardRowTop");
-  if (topRow) {
-    const rowRect = topRow.getBoundingClientRect();
-    return rowRect.top;
-  }
-
-  return mobileKeyboardEl.getBoundingClientRect().top;
-}
-
-function positionGridAtPlayableCenter() {
-  if (!puzzleOpen || !gridEl || !clueBar) return;
-
-  // Reset before measuring so offsets don't compound.
-  gridEl.style.transform = "translateY(0px)";
-
-  const clueBottom = getClueBottomBoundary();
-  const keyboardTop = getKeyboardTopBoundary();
-
-  const gridRect = gridEl.getBoundingClientRect();
-  if (!gridRect.height) return;
-
-  const targetCenterY = (clueBottom + keyboardTop) / 2;
-  const gridCenterY = gridRect.top + (gridRect.height / 2);
-  const dy = Math.round(targetCenterY - gridCenterY);
-
-  gridEl.style.transform = `translateY(${dy}px)`;
-  paintSelection();
+function openCluePopup() {
+  if (!currentClueText) return;
+  cluePopupBody.textContent = currentClueText;
+  openSheet("cluePopup");
 }
 
 function computeCellSize(rows, cols) {
@@ -1443,7 +1460,8 @@ function computeCellSize(rows, cols) {
 
   const cell = Math.max(20, Math.floor(Math.min(availW / cols, availH / rows)));
   gridEl.style.setProperty("--cell", `${cell}px`);
-  requestAnimationFrame(positionGridAtPlayableCenter);
+  gridEl.style.transform = "translateY(0px)";
+  requestAnimationFrame(paintSelection);
 }
 
 /* ===========================
