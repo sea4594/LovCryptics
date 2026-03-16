@@ -411,9 +411,6 @@ function renderMobileKeyboard() {
           return;
         }
 
-        // Letter/space/enter keys should act as quick taps even if finger is held.
-        btn.classList.add("mobileKeyQuickRelease");
-        setTimeout(() => btn.classList.remove("mobileKeyQuickRelease"), 70);
         handlePuzzleKey(item.key);
       });
 

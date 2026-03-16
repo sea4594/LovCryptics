@@ -518,10 +518,6 @@ body.modalOpen .cellOutline{
   min-height:53px;
 }
 
-.mobileKeyQuickRelease{
-  pointer-events:none;
-}
-
 .mobileKeyBackspace{
   font-size:18px;
   padding:10px 0;
