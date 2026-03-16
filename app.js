@@ -400,17 +400,17 @@ function renderMobileKeyboard() {
         btn.blur();
 
         if (item.key === "Backspace") {
-          void handlePuzzleKey(item.key);
+          handlePuzzleKey(item.key);
           stopBackspaceRepeat();
           backspaceRepeatDelayTimer = setTimeout(() => {
             backspaceRepeatInterval = setInterval(() => {
-              void handlePuzzleKey(item.key);
-            }, 95);
-          }, 260);
+              handlePuzzleKey(item.key);
+            }, 72);
+          }, 180);
           return;
         }
 
-        void handlePuzzleKey(item.key);
+        handlePuzzleKey(item.key);
       });
 
       btn.addEventListener("contextmenu", (e) => e.preventDefault());
@@ -1454,13 +1454,13 @@ function cellIsVerifiedCorrect(cellIndex) {
    TYPING
 =========================== */
 
-async function onKeyDown(e) {
+function onKeyDown(e) {
   if (!puzzleOpen) return;
-  const handled = await handlePuzzleKey(e.key);
+  const handled = handlePuzzleKey(e.key);
   if (handled) e.preventDefault();
 }
 
-async function handlePuzzleKey(key) {
+function handlePuzzleKey(key) {
   if (!puzzleOpen) return false;
   if (!current.spec || !current.progress) return false;
   if (current.progress.completed) return false;
@@ -1484,7 +1484,7 @@ async function handlePuzzleKey(key) {
       return true;
     }
     setCell(cellIndex, key.toUpperCase());
-    await autosave();
+    autosave();
     advanceForward(wordId, cellIndex);
     return true;
   }
@@ -1499,7 +1499,7 @@ async function handlePuzzleKey(key) {
 
     if (filledHere) {
       setCell(cellIndex, "");
-      await autosave();
+      autosave();
       return true;
     }
 

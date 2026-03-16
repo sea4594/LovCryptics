@@ -358,7 +358,7 @@ body[data-theme-base="sand"][data-theme-mode="dark"]{
   display:flex;
   align-items:center;
   justify-content:center;
-  padding:2px 4px 14px;
+  padding:0 4px 24px;
   overflow:hidden;
 }
 
@@ -420,7 +420,7 @@ body.modalOpen .cellOutline{
 .mobileKeyboard{
   display:none;
   gap:0;
-  margin-top:-52px;
+  margin-top:-92px;
   padding:4px 8px 12px;
   border-top:1px solid var(--line);
   background:#e8ebf2;
@@ -458,6 +458,7 @@ body.modalOpen .cellOutline{
 .mobileKeyboardRowSpace{
   grid-template-columns:1fr 4.5fr 1.7fr;
   gap:0;
+  padding:0 5%;
 }
 
 .mobileKey{
@@ -466,7 +467,7 @@ body.modalOpen .cellOutline{
   background:transparent;
   color:#111318;
   border-radius:0;
-  min-height:52px;
+  min-height:60px;
   padding:10px 0;
   font-size:16px;
   font-weight:900;
@@ -484,7 +485,7 @@ body.modalOpen .cellOutline{
 .mobileKey::before{
   content:"";
   position:absolute;
-  inset:6px 2px;
+  inset:9px 2px;
   background:#ffffff;
   border-radius:10px;
   z-index:-1;
@@ -506,7 +507,7 @@ body.modalOpen .cellOutline{
 }
 
 .mobileKeySpacer{
-  min-height:52px;
+  min-height:60px;
 }
 
 .mobileKeyBackspace{
@@ -515,7 +516,7 @@ body.modalOpen .cellOutline{
 }
 
 .mobileKeyBackspace::before{
-  inset:6px 0 6px 2px;
+  inset:9px -4px 9px 2px;
 }
 
 @media (pointer: coarse), (hover: none) {
