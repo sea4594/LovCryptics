@@ -343,8 +343,9 @@ function renderMobileKeyboard() {
     {
       className: "mobileKeyboardRow mobileKeyboardRowBottom",
       keys: [
+        { label: "", key: null, extraClass: "mobileKeySpacer" },
         ...[..."ZXCVBNM"].map((key) => ({ label: key, key })),
-        { label: "⌫", key: "Backspace", extraClass: "mobileKeyWide mobileKeyIcon" },
+        { label: "⌫", key: "Backspace", extraClass: "mobileKeyWide mobileKeyIcon mobileKeyBackspace" },
       ],
     },
     {

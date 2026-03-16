@@ -416,7 +416,8 @@ body.modalOpen .cellOutline{
 .mobileKeyboard{
   display:none;
   gap:8px;
-  padding:8px 8px 12px;
+  margin-top:-6px;
+  padding:4px 8px 12px;
   border-top:1px solid var(--line);
   background:#e8ebf2;
   touch-action:manipulation;
@@ -443,7 +444,8 @@ body.modalOpen .cellOutline{
 }
 
 .mobileKeyboardRowBottom{
-  grid-template-columns:repeat(7, minmax(0, 1fr)) 1.6fr;
+  grid-template-columns:repeat(9, minmax(0, 1fr));
+  padding:0 5%;
 }
 
 .mobileKeyboardRowSpace{
@@ -452,7 +454,8 @@ body.modalOpen .cellOutline{
 }
 
 .mobileKey{
-  border:1px solid var(--line);
+  border:none;
+  outline:none;
   background:#ffffff;
   color:#111318;
   border-radius:12px;
@@ -462,6 +465,8 @@ body.modalOpen .cellOutline{
   font-weight:900;
   text-transform:uppercase;
   touch-action:manipulation;
+  appearance:none;
+  -webkit-appearance:none;
 }
 
 .mobileKeyWide{
@@ -481,6 +486,11 @@ body.modalOpen .cellOutline{
 
 .mobileKeySpacer{
   min-height:44px;
+}
+
+.mobileKeyBackspace{
+  font-size:18px;
+  padding:10px 0;
 }
 
 @media (pointer: coarse), (hover: none) {
