@@ -418,7 +418,7 @@ body.modalOpen .cellOutline{
 
 .mobileKeyboard{
   display:none;
-  gap:8px;
+  gap:0;
   margin-top:-14px;
   padding:4px 8px 12px;
   border-top:1px solid var(--line);
@@ -437,7 +437,7 @@ body.modalOpen .cellOutline{
 
 .mobileKeyboardRow{
   display:grid;
-  gap:6px;
+  gap:0;
 }
 
 .mobileKeyboardRowTop{
@@ -450,13 +450,13 @@ body.modalOpen .cellOutline{
 }
 
 .mobileKeyboardRowBottom{
-  grid-template-columns:repeat(9, minmax(0, 1fr));
-  padding:0 5%;
+  grid-template-columns:repeat(8, minmax(0, 1fr)) minmax(0, 2.6fr);
+  padding:0 0 0 5%;
 }
 
 .mobileKeyboardRowSpace{
   grid-template-columns:1fr 4.5fr 1.7fr;
-  gap:8px;
+  gap:0;
 }
 
 .mobileKey{
@@ -464,7 +464,7 @@ body.modalOpen .cellOutline{
   outline:none;
   background:#ffffff;
   color:#111318;
-  border-radius:12px;
+  border-radius:0;
   min-height:44px;
   padding:10px 0;
   font-size:16px;
