@@ -235,7 +235,9 @@ body[data-theme-base="sand"][data-theme-mode="dark"]{
   min-width:0;
   flex:1 1 auto;
 }
-.homeTitle{ display:grid; gap:4px; min-width:0; }
+.homeTitle{ display:flex; align-items:center; gap:8px; min-width:0; }
+.homeTitle > div { display:grid; gap:4px; min-width:0; }
+.homeLogo{ width:36px; height:36px; object-fit:contain; flex-shrink:0; border-radius:6px; }
 .homeActions{
   display:flex;
   gap:10px;
