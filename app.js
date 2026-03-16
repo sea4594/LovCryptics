@@ -1116,6 +1116,7 @@ function renderGrid(spec, progress) {
     if (spec.isBlock[i]) {
       cell.classList.add("block");
       cell.textContent = "";
+      cell.addEventListener("click", () => setSelection(null));
     } else {
       cell.textContent = (progress.fills[i] || "").toUpperCase();
       cell.addEventListener("click", () => onCellTap(i));
