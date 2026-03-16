@@ -27,6 +27,11 @@ body{
   overflow:hidden;
 }
 
+#homeView{
+  display:flex;
+  flex-direction:column;
+}
+
 h1{margin:0;font-size:20px;letter-spacing:.2px;}
 
 /* ===========================
@@ -222,18 +227,16 @@ body[data-theme-base="sand"][data-theme-mode="dark"]{
 
 .homeTop{
   display:flex;
-  align-items:center;
-  justify-content:space-between;
-  gap:12px;
+  flex-direction:column;
+  align-items:stretch;
+  gap:10px;
   margin-bottom:10px;
-  flex-wrap:nowrap;
 }
 .homeLeft{
   display:flex;
   align-items:center;
   gap:10px;
   min-width:0;
-  flex:1 1 auto;
 }
 .homeTitle{ display:flex; align-items:center; gap:8px; min-width:0; }
 .homeTitle > div { display:grid; gap:4px; min-width:0; }
@@ -242,8 +245,7 @@ body[data-theme-base="sand"][data-theme-mode="dark"]{
   display:flex;
   gap:10px;
   align-items:center;
-  flex-wrap:nowrap;
-  flex:0 0 auto;
+  flex-wrap:wrap;
 }
 
 .chip{
@@ -266,7 +268,8 @@ body[data-theme-base="sand"][data-theme-mode="dark"]{
 }
 
 .archive{
-  height:calc(100% - 56px);
+  flex:1 1 auto;
+  min-height:0;
   overflow:auto;
   display:grid;
   gap:10px;
