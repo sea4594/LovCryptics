@@ -1,6 +1,6 @@
 :root{
   --topbar-h: 42px;
-  --cluebar-h: 58px;
+  --cluebar-h: 64px;
   --card-h: 72px;
   --cell-gap: 1px;
   --grid-pad: 1px;
@@ -342,7 +342,7 @@ body[data-theme-base="sand"][data-theme-mode="dark"]{
   padding:5px 10px;
   border-bottom:1px solid var(--line);
   color:var(--text);
-  font-size:13px;
+  font-size:14px;
   line-height:1.23;
   display:block;
   background:var(--panel);
@@ -358,7 +358,7 @@ body[data-theme-base="sand"][data-theme-mode="dark"]{
   display:flex;
   align-items:center;
   justify-content:center;
-  padding:6px 4px;
+  padding:2px 4px 14px;
   overflow:hidden;
 }
 
@@ -420,7 +420,7 @@ body.modalOpen .cellOutline{
 .mobileKeyboard{
   display:none;
   gap:0;
-  margin-top:-34px;
+  margin-top:-52px;
   padding:4px 8px 12px;
   border-top:1px solid var(--line);
   background:#e8ebf2;
@@ -484,7 +484,7 @@ body.modalOpen .cellOutline{
 .mobileKey::before{
   content:"";
   position:absolute;
-  inset:4px 2px;
+  inset:6px 2px;
   background:#ffffff;
   border-radius:10px;
   z-index:-1;
@@ -512,6 +512,10 @@ body.modalOpen .cellOutline{
 .mobileKeyBackspace{
   font-size:18px;
   padding:10px 0;
+}
+
+.mobileKeyBackspace::before{
+  inset:6px 0 6px 2px;
 }
 
 @media (pointer: coarse), (hover: none) {
