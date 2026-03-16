@@ -300,6 +300,8 @@ body[data-theme-base="sand"][data-theme-mode="dark"]{
 =========================== */
 
 #puzzleView{
+  display:flex;
+  flex-direction:column;
   padding:0;
   padding-top:env(safe-area-inset-top);
   padding-bottom:env(safe-area-inset-bottom);
@@ -346,7 +348,8 @@ body[data-theme-base="sand"][data-theme-mode="dark"]{
 }
 
 .gridShell{
-  height:calc(100dvh - env(safe-area-inset-top) - env(safe-area-inset-bottom) - var(--topbar-h) - var(--cluebar-h));
+  flex:1 1 auto;
+  min-height:0;
   display:flex;
   align-items:flex-start;
   justify-content:center;
@@ -408,6 +411,57 @@ body.modalOpen .cellOutline{
 }
 
 .kbd{position:absolute;left:-9999px;top:-9999px;width:1px;height:1px;opacity:0;}
+
+.mobileKeyboard{
+  display:none;
+  gap:8px;
+  padding:8px 8px 12px;
+  border-top:1px solid var(--line);
+  background:var(--panel);
+}
+
+.mobileKeyboardRow{
+  display:grid;
+  grid-template-columns:repeat(10, minmax(0, 1fr));
+  gap:6px;
+}
+
+.mobileKeyboardRow:nth-child(2){
+  grid-template-columns:repeat(9, minmax(0, 1fr));
+  padding:0 5%;
+}
+
+.mobileKeyboardRow:nth-child(3){
+  grid-template-columns:repeat(7, minmax(0, 1fr));
+  padding:0 13%;
+}
+
+.mobileKeyboardRowActions{
+  grid-template-columns:repeat(2, minmax(0, 1fr));
+}
+
+.mobileKey{
+  border:1px solid var(--line);
+  background:var(--bg);
+  color:var(--text);
+  border-radius:12px;
+  min-height:44px;
+  padding:10px 0;
+  font-size:16px;
+  font-weight:900;
+  text-transform:uppercase;
+}
+
+.mobileKeyWide{
+  font-size:13px;
+  letter-spacing:.5px;
+}
+
+@media (pointer: coarse), (hover: none) {
+  .mobileKeyboard{
+    display:grid;
+  }
+}
 
 /* ===========================
    SHEETS

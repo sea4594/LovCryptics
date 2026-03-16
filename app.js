@@ -50,6 +50,7 @@ const gridEl = $("#grid");
 const clueBar = $("#clueBar");
 const timerEl = $("#timer");
 const kbd = $("#kbd");
+const mobileKeyboardEl = $("#mobileKeyboard");
 
 const hintBtn = $("#hintBtn");
 const menuBtn = $("#menuBtn");
@@ -129,6 +130,7 @@ let signedIn = false;
 
 let wordOutlineEl = null;
 let cellOutlineEl = null;
+const useInAppKeyboard = window.matchMedia("(pointer: coarse), (hover: none)").matches;
 
 /* ===========================
    INIT
@@ -280,6 +282,7 @@ async function init() {
   // Keyboard
   kbd.addEventListener("keydown", onKeyDown);
   window.addEventListener("keydown", onGlobalKeyDown);
+  renderMobileKeyboard();
 
   // Lifecycle
   document.addEventListener("visibilitychange", async () => {
@@ -317,6 +320,67 @@ async function init() {
   if (signedIn) pullProgressFromDrive().catch(() => {});
 
   homeStatusEl.textContent = "Loaded";
+}
+
+function renderMobileKeyboard() {
+  if (!mobileKeyboardEl) return;
+
+  if (!useInAppKeyboard) {
+    mobileKeyboardEl.classList.add("hidden");
+    return;
+  }
+
+  const rows = [
+    "QWERTYUIOP",
+    "ASDFGHJKL",
+    "ZXCVBNM",
+  ];
+
+  mobileKeyboardEl.innerHTML = "";
+  mobileKeyboardEl.classList.remove("hidden");
+
+  for (const rowLetters of rows) {
+    const row = document.createElement("div");
+    row.className = "mobileKeyboardRow";
+
+    for (const letter of rowLetters) {
+      const btn = document.createElement("button");
+      btn.type = "button";
+      btn.className = "mobileKey";
+      btn.textContent = letter;
+      btn.setAttribute("aria-label", letter);
+      btn.addEventListener("click", () => {
+        handlePuzzleKey(letter);
+      });
+      row.appendChild(btn);
+    }
+
+    mobileKeyboardEl.appendChild(row);
+  }
+
+  const actionRow = document.createElement("div");
+  actionRow.className = "mobileKeyboardRow mobileKeyboardRowActions";
+
+  const backspaceBtn = document.createElement("button");
+  backspaceBtn.type = "button";
+  backspaceBtn.className = "mobileKey mobileKeyWide";
+  backspaceBtn.textContent = "BACKSPACE";
+  backspaceBtn.setAttribute("aria-label", "Backspace");
+  backspaceBtn.addEventListener("click", () => {
+    handlePuzzleKey("Backspace");
+  });
+
+  const enterBtn = document.createElement("button");
+  enterBtn.type = "button";
+  enterBtn.className = "mobileKey mobileKeyWide";
+  enterBtn.textContent = "ENTER";
+  enterBtn.setAttribute("aria-label", "Enter");
+  enterBtn.addEventListener("click", () => {
+    handlePuzzleKey("Enter");
+  });
+
+  actionRow.append(backspaceBtn, enterBtn);
+  mobileKeyboardEl.appendChild(actionRow);
 }
 
 /* ===========================
@@ -856,7 +920,7 @@ async function openPuzzle(psid, date) {
     clearAllOk();
   }
 
-  setTimeout(() => kbd.focus(), 50);
+  if (!useInAppKeyboard) setTimeout(() => kbd.focus(), 50);
 
   await startTimerIfOpen(true);
 }
@@ -1188,7 +1252,7 @@ function onCellTap(cellIndex) {
   }
 
   setSelection({ cellIndex, wordId: nextWordId, dir: nextDir });
-  kbd.focus();
+  if (!useInAppKeyboard) kbd.focus();
 }
 
 function setSelection(sel) {
@@ -1343,43 +1407,66 @@ function cellIsVerifiedCorrect(cellIndex) {
 
 async function onKeyDown(e) {
   if (!puzzleOpen) return;
-  if (!current.spec || !current.progress || !current.selected) return;
-  if (current.progress.completed) return;
+  const handled = await handlePuzzleKey(e.key);
+  if (handled) e.preventDefault();
+}
+
+async function handlePuzzleKey(key) {
+  if (!puzzleOpen) return false;
+  if (!current.spec || !current.progress) return false;
+  if (current.progress.completed) return false;
+
+  if (key === "Enter") {
+    return toggleSelectedDirection();
+  }
+
+  if (!current.selected) return false;
 
   const { cellIndex, wordId } = current.selected;
-  if (current.spec.isBlock[cellIndex]) return;
-
-  const key = e.key;
+  if (current.spec.isBlock[cellIndex]) return false;
 
   if (/^[a-zA-Z]$/.test(key)) {
-    e.preventDefault();
     if (current.progress.wordChecks && cellIsVerifiedCorrect(cellIndex)) {
       advanceForward(wordId, cellIndex);
-      return;
+      return true;
     }
     setCell(cellIndex, key.toUpperCase());
     await autosave();
     advanceForward(wordId, cellIndex);
-    return;
+    return true;
   }
 
   if (key === "Backspace") {
-    e.preventDefault();
     const filledHere = getCell(cellIndex);
 
     if (filledHere && current.progress.wordChecks && cellIsVerifiedCorrect(cellIndex)) {
       moveBackOneCell(wordId, cellIndex, { deletePrev: false });
-      return;
+      return true;
     }
 
     if (filledHere) {
       setCell(cellIndex, "");
       await autosave();
-      return;
+      return true;
     }
 
     moveBackOneCell(wordId, cellIndex, { deletePrev: true });
+    return true;
   }
+
+  return false;
+}
+
+function toggleSelectedDirection() {
+  if (!current.selected) return false;
+  const idx = current.selected.cellIndex;
+  const choices = getWordChoicesAtCell(idx);
+  if (choices.length <= 1) return true;
+
+  const curId = current.selected.wordId;
+  const next = choices.find((c) => c.wordId !== curId) || choices[0];
+  setSelection({ cellIndex: idx, wordId: next.wordId, dir: next.dir });
+  return true;
 }
 
 function advanceForward(wordId, cellIndex) {
@@ -1548,14 +1635,7 @@ function onGlobalKeyDown(e) {
   // Enter toggles across/down at intersections
   if (e.key === "Enter") {
     e.preventDefault();
-    if (!current.selected) return;
-    const idx = current.selected.cellIndex;
-    const choices = getWordChoicesAtCell(idx);
-    if (choices.length > 1) {
-      const curId = current.selected.wordId;
-      const next = choices.find((c) => c.wordId !== curId) || choices[0];
-      setSelection({ cellIndex: idx, wordId: next.wordId, dir: next.dir });
-    }
+    toggleSelectedDirection();
     return;
   }
 
