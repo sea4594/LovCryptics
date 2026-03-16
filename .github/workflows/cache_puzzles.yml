@@ -2,7 +2,8 @@ name: Cache Lovatt puzzles
 
 on:
   schedule:
-    - cron: "20 6 * * *"   # daily at 06:20 UTC
+    - cron: "20 6 * * *"    # daily at 06:20 UTC (catches early-UTC puzzles)
+    - cron: "0 16 * * *"    # daily at 16:00 UTC (catches mid-UTC / late AEST puzzles)
   workflow_dispatch:
     inputs:
       backfill:
