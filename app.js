@@ -107,6 +107,7 @@ let puzzleOpen = false;
 
 let savePending = null;
 let syncPending = null;
+let wordCheckPaintPending = false;
 
 // verified correct words
 let correctWordIds = new Set();
@@ -1438,6 +1439,21 @@ function clearAllOk() {
   for (const el of gridEl.querySelectorAll(".cell.wordOk")) el.classList.remove("wordOk");
 }
 
+function scheduleWordCheckPaint() {
+  if (wordCheckPaintPending) return;
+  wordCheckPaintPending = true;
+
+  requestAnimationFrame(() => {
+    wordCheckPaintPending = false;
+    if (!current.progress?.wordChecks) {
+      clearAllOk();
+      return;
+    }
+    recomputeCorrectWords();
+    paintOkFromSet();
+  });
+}
+
 function recomputeCorrectWords() {
   correctWordIds = new Set();
   for (const w of current.spec.words) {
@@ -1603,10 +1619,8 @@ function setCell(i, v) {
   if (el) el.textContent = v;
 
   if (current.progress.wordChecks) {
-    recomputeCorrectWords();
-    paintOkFromSet();
+    scheduleWordCheckPaint();
   }
-  paintSelection();
 }
 
 /* ===========================
