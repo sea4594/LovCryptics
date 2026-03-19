@@ -119,10 +119,32 @@ self.addEventListener("fetch", (event) => {
     return;
   }
 
-  // Puzzle JSON: cache-first (fast offline), fetch if missing
+  // Puzzle index: network-first so newly-added puzzle dates are always visible.
+  // Falls back to cache when offline.
+  if (url.pathname.endsWith("/puzzles/index.json")) {
+    event.respondWith(
+      (async () => {
+        try {
+          const fresh = await fetch(req, { cache: "no-store" });
+          if (fresh.ok && req.method === "GET") {
+            const build = await getBuild();
+            const cache = await caches.open(await cacheNameFor(build));
+            cache.put(req, fresh.clone());
+          }
+          return fresh;
+        } catch {
+          const cached = await caches.match(req);
+          if (cached) return cached;
+          return new Response("Offline", { status: 503 });
+        }
+      })()
+    );
+    return;
+  }
+
+  // Individual puzzle JSON files: cache-first (immutable once fetched)
   const isPuzzleJson =
-    (url.pathname.includes("/puzzles/") && url.pathname.endsWith(".json")) ||
-    url.pathname.endsWith("/puzzles/index.json");
+    url.pathname.includes("/puzzles/") && url.pathname.endsWith(".json");
 
   if (isPuzzleJson) {
     event.respondWith(

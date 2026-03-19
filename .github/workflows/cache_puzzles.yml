@@ -44,6 +44,12 @@ jobs:
           if git diff --cached --quiet; then
             echo "No changes."
           else
+            # Bump version.json so the service worker cache-busts and re-fetches
+            # the updated puzzle index. Bot pushes don't trigger version_sha.yml,
+            # so we must update it here to ensure users see new puzzles promptly.
+            LATEST_DATE=$(python3 -c "import json; idx=json.load(open('puzzles/index.json')); print(sorted(idx['dates'])[-1])")
+            echo "{ \"build\": \"puzzles-${LATEST_DATE}\" }" > version.json
+            git add version.json
             git commit -m "Update puzzle cache"
             git push
           fi
