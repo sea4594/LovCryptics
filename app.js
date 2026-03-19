@@ -11,6 +11,10 @@ const GOOGLE_CLIENT_ID =
 
 const DRIVE_SCOPE = "https://www.googleapis.com/auth/drive.appdata";
 
+// iOS Safari blocks OAuth popups and window.open() in PWA mode;
+// use a redirect-based implicit flow instead.
+const isIOS = /iPad|iPhone|iPod/.test(navigator.userAgent);
+
 const FETCH_TIMEOUT_MS = 8000;
 const INDEX_REFRESH_EVERY_MS = 30 * 60 * 1000;
 
@@ -350,7 +354,13 @@ async function init() {
 
   // Google
   await initGoogleTokenClient();
-  await restoreGoogleSession();
+  // Check if we just returned from a Google OAuth redirect (iOS flow)
+  if (handleOAuthRedirectReturn()) {
+    updateAccountUI();
+    pullProgressFromDrive().catch(() => {});
+  } else {
+    await restoreGoogleSession();
+  }
 
   homeStatusEl.textContent = "Loaded";
 }
@@ -561,6 +571,34 @@ async function initGoogleTokenClient() {
   });
 }
 
+// Redirect to Google OAuth (used on iOS where popups are blocked)
+function loginGoogleRedirect() {
+  const redirectUri = location.origin + location.pathname;
+  const params = new URLSearchParams({
+    client_id: GOOGLE_CLIENT_ID,
+    redirect_uri: redirectUri,
+    response_type: "token",
+    scope: DRIVE_SCOPE,
+    prompt: "select_account",
+  });
+  location.href = "https://accounts.google.com/o/oauth2/v2/auth?" + params.toString();
+}
+
+// After Google redirects back, the token is in the URL hash.
+// Returns true if a valid token was found and stored.
+function handleOAuthRedirectReturn() {
+  if (!location.hash) return false;
+  const hash = new URLSearchParams(location.hash.slice(1));
+  const token = hash.get("access_token");
+  const expiresIn = hash.get("expires_in");
+  if (!token) return false;
+  // Remove token from URL to avoid leaking it in browser history
+  history.replaceState(null, "", location.pathname + location.search);
+  storeToken(token, expiresIn);
+  driveFileId = null;
+  return true;
+}
+
 function storeToken(token, expiresInSeconds) {
   accessToken = token;
   signedIn = true;
@@ -594,6 +632,12 @@ function restoreTokenFromStorage() {
 
 async function loginGoogle(interactive) {
   if (loginInFlight) return loginInFlight;
+
+  // On iOS, popups are blocked — use redirect flow for interactive login
+  if (interactive && isIOS) {
+    loginGoogleRedirect();
+    return;
+  }
 
   if (!tokenClient) await initGoogleTokenClient();
   if (!tokenClient) {
@@ -667,7 +711,10 @@ async function restoreGoogleSession() {
     return;
   }
 
-  if (!hasAutoLogin) {
+  // On iOS the silent popup-based refresh is blocked; skip it to avoid
+  // permanently showing "Restoring Google session…". The user can tap
+  // Login to reauthenticate via the redirect flow.
+  if (!hasAutoLogin || isIOS) {
     updateAccountUI();
     return;
   }
