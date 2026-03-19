@@ -21,10 +21,8 @@ body{
 .muted{color:var(--muted);font-size:13px;}
 
 .view{
-  height:100vh;
-  height:100dvh;
+  height:100%;
   padding:14px;
-  padding-bottom:calc(14px + env(safe-area-inset-bottom));
   padding-top:calc(14px + env(safe-area-inset-top));
   overflow:hidden;
 }
@@ -306,7 +304,6 @@ body[data-theme-base="sand"][data-theme-mode="dark"]{
   flex-direction:column;
   padding:0;
   padding-top:env(safe-area-inset-top);
-  padding-bottom:env(safe-area-inset-bottom);
 }
 
 .topbar{
