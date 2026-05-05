@@ -345,6 +345,7 @@ async function init() {
   window.addEventListener("resize", () => {
     if (current.spec) computeCellSize(current.spec.rows, current.spec.cols);
     paintSelection();
+    syncMobileEdgeHitboxes();
   });
 
   // Load index + render
@@ -418,7 +419,13 @@ function renderMobileKeyboard() {
 
       const btn = document.createElement("button");
       btn.type = "button";
-      btn.className = `mobileKey ${item.extraClass || ""}`.trim();
+      const edgeHitboxClass =
+        item.key === "Q" || item.key === "A"
+          ? " mobileKeyEdgeLeft"
+          : item.key === "P" || item.key === "L" || item.key === "Backspace"
+            ? " mobileKeyEdgeRight"
+            : "";
+      btn.className = `mobileKey ${item.extraClass || ""}${edgeHitboxClass}`.trim();
       btn.textContent = item.label;
       btn.setAttribute("aria-label", item.label);
       btn.tabIndex = -1;
@@ -449,6 +456,23 @@ function renderMobileKeyboard() {
     }
 
     mobileKeyboardEl.appendChild(row);
+  }
+
+  syncMobileEdgeHitboxes();
+}
+
+function syncMobileEdgeHitboxes() {
+  if (!mobileKeyboardEl || mobileKeyboardEl.classList.contains("hidden")) return;
+
+  const edgeKeys = mobileKeyboardEl.querySelectorAll(".mobileKeyEdgeLeft, .mobileKeyEdgeRight");
+  for (const keyEl of edgeKeys) {
+    const rect = keyEl.getBoundingClientRect();
+    if (keyEl.classList.contains("mobileKeyEdgeLeft")) {
+      keyEl.style.setProperty("--hitbox-extend-left", `${Math.max(0, rect.left)}px`);
+    }
+    if (keyEl.classList.contains("mobileKeyEdgeRight")) {
+      keyEl.style.setProperty("--hitbox-extend-right", `${Math.max(0, window.innerWidth - rect.right)}px`);
+    }
   }
 }
 

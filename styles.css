@@ -500,6 +500,25 @@ body.modalOpen .cellOutline{
   z-index:-1;
 }
 
+.mobileKeyEdgeLeft::after,
+.mobileKeyEdgeRight::after{
+  content:"";
+  position:absolute;
+  top:0;
+  bottom:0;
+  background:transparent;
+}
+
+.mobileKeyEdgeLeft::after{
+  left:calc(-1 * var(--hitbox-extend-left, 0px));
+  width:var(--hitbox-extend-left, 0px);
+}
+
+.mobileKeyEdgeRight::after{
+  right:calc(-1 * var(--hitbox-extend-right, 0px));
+  width:var(--hitbox-extend-right, 0px);
+}
+
 .mobileKeyWide{
   font-size:13px;
   letter-spacing:.5px;
