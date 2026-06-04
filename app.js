@@ -127,45 +127,6 @@ let lastPaintedSecond = null;
 // index refresh timer
 let indexTimer = null;
 
-// typing history for undo (stores cell indices in order typed)
-let typingHistory = [];
-
-function pushTypingHistory(i) {
-  typingHistory.push(i);
-}
-
-function removeHistoryForCell(i) {
-  // remove all occurrences of this cell from history
-  typingHistory = typingHistory.filter((x) => x !== i);
-}
-
-function popLastTypedCell() {
-  while (typingHistory.length) {
-    const i = typingHistory.pop();
-    if (getCell(i)) return i;
-  }
-  return null;
-}
-
-function undoLastTyped() {
-  if (!current.spec || !current.progress) return;
-  const i = popLastTypedCell();
-  if (i === null) return;
-
-  // clear the cell
-  setCell(i, "");
-  autosave();
-
-  // choose a word to select for this cell (prefer across)
-  const choices = getWordChoicesAtCell(i);
-  if (!choices || choices.length === 0) {
-    setSelection({ cellIndex: i, wordId: null, dir: null });
-    return;
-  }
-  const preferAcross = choices.find((c) => c.dir === "a") || choices[0];
-  setSelection({ cellIndex: i, wordId: preferAcross.wordId, dir: preferAcross.dir });
-}
-
 // auth
 let accessToken = null;
 let tokenClient = null;
@@ -433,8 +394,7 @@ function renderMobileKeyboard() {
     {
       className: "mobileKeyboardRow mobileKeyboardRowSpace",
       keys: [
-        { label: "", key: null, extraClass: "mobileKeySpacer" },
-        { label: "⎌", key: "Undo", extraClass: "mobileKeyWide" },
+        { label: "↶", key: "Undo", extraClass: "mobileKeyIcon" },
         { label: "SPACE", key: "Space", extraClass: "mobileKeySpace" },
         { label: "ENTER", key: "Enter", extraClass: "mobileKeyWide" },
       ],
@@ -473,11 +433,6 @@ function renderMobileKeyboard() {
         e.preventDefault();
         btn.blur();
 
-        if (item.key === "Undo") {
-          undoLastTyped();
-          return;
-        }
-
         if (item.key === "Backspace") {
           btn.setPointerCapture?.(e.pointerId);
           handlePuzzleKey(item.key);
@@ -487,6 +442,11 @@ function renderMobileKeyboard() {
               handlePuzzleKey(item.key);
             }, 72);
           }, 180);
+          return;
+        }
+
+        if (item.key === "Undo") {
+          handleUndo();
           return;
         }
 
@@ -1653,6 +1613,24 @@ function onKeyDown(e) {
   if (handled) e.preventDefault();
 }
 
+function handleUndo() {
+  if (!puzzleOpen) return false;
+  if (!current.spec || !current.progress) return false;
+  if (current.progress.completed) return false;
+  if (!current.selected) return false;
+
+  const { cellIndex } = current.selected;
+  if (current.spec.isBlock[cellIndex]) return false;
+
+  if (getCell(cellIndex)) {
+    setCell(cellIndex, "");
+    autosave();
+    return true;
+  }
+
+  return false;
+}
+
 function handlePuzzleKey(key) {
   if (!puzzleOpen) return false;
   if (!current.spec || !current.progress) return false;
@@ -1677,7 +1655,6 @@ function handlePuzzleKey(key) {
       return true;
     }
     setCell(cellIndex, key.toUpperCase());
-    pushTypingHistory(cellIndex);
     autosave();
     advanceForward(wordId, cellIndex);
     return true;
@@ -1693,7 +1670,6 @@ function handlePuzzleKey(key) {
 
     if (filledHere) {
       setCell(cellIndex, "");
-      removeHistoryForCell(cellIndex);
       autosave();
       return true;
     }
@@ -1756,7 +1732,6 @@ function moveBackOneCell(wordId, cellIndex, opts = { deletePrev: true }) {
   if (getCell(prev)) {
     if (current.progress.wordChecks && cellIsVerifiedCorrect(prev)) return;
     setCell(prev, "");
-    removeHistoryForCell(prev);
     autosave();
   }
 }
