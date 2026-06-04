@@ -394,7 +394,7 @@ function renderMobileKeyboard() {
     {
       className: "mobileKeyboardRow mobileKeyboardRowSpace",
       keys: [
-        { label: "↶", key: "Undo", extraClass: "mobileKeyIcon" },
+        { label: "", key: null, extraClass: "mobileKeySpacer" },
         { label: "SPACE", key: "Space", extraClass: "mobileKeySpace" },
         { label: "ENTER", key: "Enter", extraClass: "mobileKeyWide" },
       ],
@@ -442,11 +442,6 @@ function renderMobileKeyboard() {
               handlePuzzleKey(item.key);
             }, 72);
           }, 180);
-          return;
-        }
-
-        if (item.key === "Undo") {
-          handleUndo();
           return;
         }
 
@@ -1611,24 +1606,6 @@ function onKeyDown(e) {
   if (!puzzleOpen) return;
   const handled = handlePuzzleKey(e.key);
   if (handled) e.preventDefault();
-}
-
-function handleUndo() {
-  if (!puzzleOpen) return false;
-  if (!current.spec || !current.progress) return false;
-  if (current.progress.completed) return false;
-  if (!current.selected) return false;
-
-  const { cellIndex } = current.selected;
-  if (current.spec.isBlock[cellIndex]) return false;
-
-  if (getCell(cellIndex)) {
-    setCell(cellIndex, "");
-    autosave();
-    return true;
-  }
-
-  return false;
 }
 
 function handlePuzzleKey(key) {
